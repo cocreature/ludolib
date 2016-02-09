@@ -22,20 +22,21 @@ library
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
 
+test-suite tests
+    type:               exitcode-stdio-1.0
+    hs-source-dirs:     test
+    main-is:            Tests.hs
+    other-modules:      Data.PCGenTests
+    build-depends:      hspec,
+                        QuickCheck,
+                        ludolib,
+                        base,
+                        random
+    default-language:   Haskell2010
+
 --executable roguelike-hs
 --    main-is:            Main.hs
 --    hs-source-dirs:     src
 --    default-language:   Haskell2010
 --    build-depends:      roguelike-hs
 --    ghc-options:        -threaded -rtsopts -with-rtsopts=-N
-
---test-suite tests
---    type:               exitcode-stdio-1.0
---    hs-source-dirs:     test
---    main-is:            Tests.hs
---    other-modules:      Roguelike.Data.LocationTests,
---                        Roguelike.Util.RNGTests
---    build-depends:      QuickCheck,
---                        ludolib,
---                        base
---    default-language:   Haskell2010
