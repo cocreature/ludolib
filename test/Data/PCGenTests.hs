@@ -49,3 +49,5 @@ pcGen64Tests :: Spec
 pcGen64Tests = describe "PCGen64" $ do
     it "Inc is always odd." $ property $
         \gen64 -> odd (getInc32.getGenA $ gen64) && odd (getInc32.getGenB $ gen64)
+    it "IncA and IncB never match." $ property $
+        \gen64 -> (getInc32.getGenA $ gen64) /= (getInc32.getGenB $ gen64)
