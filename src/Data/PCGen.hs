@@ -1,10 +1,5 @@
 {-# LANGUAGE CPP #-}
 
-{-
-Based upon the C and C++ versions by M.E. O'Neill of pcg-random.org
-Her versions are Copyright 2014 to her, used under the Apache 2.0 License
--}
-
 {-|
 This contains a random number generateor based upon the C and C++ versions 
 of the concept written by M.E. O'Neill of <pcg-random.org>. Her versions
@@ -27,7 +22,23 @@ the 'Int' type always matches size with your current machine width.
 Use 'mkPCGen', or one of the width-specific variants, to create new PCGen
 values, and then treat it just like any other 'RandomGen' value.
 -}
-module Data.PCGen where
+module Data.PCGen (
+    -- 32 bits of output
+    PCGen32(),
+    _state32,
+    _inc32,
+    mkPCGen32,
+    
+    -- 64 bits of output
+    PCGen64(),
+    _genA,
+    _genB,
+    mkPCGen64,
+    
+    -- self-sizing output
+    PCGen,
+    mkPCGen
+    ) where
 
 import System.Random
 import Data.Bits
@@ -46,8 +57,8 @@ that *does not* change from use to use. The period is 2^64, and
 The Inc value must ALWAYS be odd, so use mkPCGen32 to ensure that.
 -}
 data PCGen32 = PCGen32 {
-    getState32 :: Word64,
-    getInc32 :: Word64
+    _state32 :: Word64,
+    _inc32 :: Word64
     } deriving (Eq, Ord, Show)
 
 -- | The Inc value on a PCGen32 must always be odd, so use this
@@ -84,8 +95,8 @@ instance RandomGen PCGen32 where
             (w,nGen2) = stepPCGen32 nGen1
             (e,nGen3) = stepPCGen32 nGen2
             (r,nGen4) = stepPCGen32 nGen3
-            stateA = (getState32 nGen4) `rotateR` 5
-            stateB = (getState32 nGen4) `rotateR` 3
+            stateA = (_state32 nGen4) `rotateR` 5
+            stateB = (_state32 nGen4) `rotateR` 3
             incA = mix32 q w
             incB = mix32 e r
             outA = mkPCGen32 stateA incA
@@ -94,12 +105,13 @@ instance RandomGen PCGen32 where
 -- | Randomly generates PCGen32 values. For randomR, the range denotes the
 --   range of the new gen's inc value.
 instance Random PCGen32 where
-    random gen = (mkPCGen32 stateWord incWord,gen'')
-        where (stateWord,gen') = random gen
-              (incWord,gen'') = random gen
-    randomR (lowGen,highGen) gen = (mkPCGen32 stateWord incWord,gen'')
-        where (stateWord,gen') = random gen
-              (incWord,gen'') = randomR (getInc32 lowGen,getInc32 highGen) gen
+    random gen = let
+        (x,newGen) = random gen
+        in (mkPCGen32 x x,newGen)
+    randomR (low,high) gen = let
+        (x,newGen) = random gen
+        (inc,_) = randomR (_inc32 low,_inc32 high) gen
+        in (mkPCGen32 x inc,newGen)
 
 -- -- -- -- --
 -- PCGen64 Section
@@ -111,8 +123,8 @@ side each other during each step.
 The Inc values must ALWAYS be odd, so use mkPCGen64 to ensure that.
 -}
 data PCGen64 = PCGen64 {
-    getGenA :: PCGen32,
-    getGenB :: PCGen32
+    _genA :: PCGen32,
+    _genB :: PCGen32
     } deriving (Eq, Ord, Show)
 
 -- | The Inc value on a PCGen64 must always be odd, so use this
@@ -142,20 +154,21 @@ instance RandomGen PCGen64 where
     genRange _ = (fromIntegral (minBound :: Int),fromIntegral (maxBound :: Int))
     split (PCGen64 genA genB) = (left, right)
         where -- no statistical foundation for this!
-            left = mkPCGen64 (getState32 a1) (getInc32 a1) (getState32 b1) (getInc32 b1)
-            right = mkPCGen64 (getState32 a2) (getInc32 a2) (getState32 b2) (getInc32 b2)
+            left = mkPCGen64 (_state32 a1) (_inc32 a1) (_state32 b1) (_inc32 b1)
+            right = mkPCGen64 (_state32 a2) (_inc32 a2) (_state32 b2) (_inc32 b2)
             (a1,a2) = split genA
             (b1,b2) = split genB
 
 -- | Randomly generates PCGen64values. For randomR, the genA of the range denotes
 --   the range of the new gen's inc value.
 instance Random PCGen64 where
-    random gen = (mkPCGen64 stateWord incWord stateWord incWord,gen'')
-        where (stateWord,gen') = random gen
-              (incWord,gen'') = random gen
-    randomR (lowGen,highGen) gen = (mkPCGen64 stateWord incWord stateWord incWord,gen'')
-        where (stateWord,gen') = random gen
-              (incWord,gen'') = randomR ((getInc32.getGenA) lowGen,(getInc32.getGenA) highGen) gen
+    random gen = let
+        (x,newGen) = random gen
+        in (mkPCGen64 x x x x,newGen)
+    randomR (low,high) gen = let
+        (x,newGen) = random gen
+        (inc,_) = randomR ((_inc32._genA) low,(_inc32._genA) high) gen
+        in (mkPCGen64 x x x x,newGen)
 
 -- -- -- -- --
 -- Section to make a "PCGen" type that always matches the local bit-width

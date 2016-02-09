@@ -38,8 +38,8 @@ instance Arbitrary PCGen64 where
 
 pcGen32Tests :: Spec
 pcGen32Tests = describe "PCGen32" $ do
-    it "Inc is always odd." $ property $
-        \gen32 -> odd (getInc32 gen32)
+    it "mkPCGen32 always gives odd inc value." $ property $
+        \gen32 -> odd (_inc32 gen32)
 
 -- -- -- -- --
 -- PCGen64 tests
@@ -47,7 +47,7 @@ pcGen32Tests = describe "PCGen32" $ do
 
 pcGen64Tests :: Spec
 pcGen64Tests = describe "PCGen64" $ do
-    it "Inc is always odd." $ property $
-        \gen64 -> odd (getInc32.getGenA $ gen64) && odd (getInc32.getGenB $ gen64)
-    it "IncA and IncB never match." $ property $
-        \gen64 -> (getInc32.getGenA $ gen64) /= (getInc32.getGenB $ gen64)
+    it "mkPCGen64 always gives odd inc value." $ property $
+        \gen64 -> odd (_inc32._genA $ gen64) && odd (_inc32._genB $ gen64)
+    it "mkPCGen64 never gives matching incA and incB." $ property $
+        \gen64 -> (_inc32._genA $ gen64) /= (_inc32._genB $ gen64)
