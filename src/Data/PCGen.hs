@@ -11,15 +11,18 @@ of the concept written by M.E. O'Neill of <pcg-random.org>. Her versions
 are Copyright 2014 to her. I'm not sure how cross-language copyright works,
 if it applies at all, but her work is used under the Apache 2.0 License.
 
-There are two actual versions provided:
+There are several versions provided:
 * 'PCGen32' provides 32 bits of output per step by holding 128 bits of
 internal data, half of which changes each step, and the other half of which
 is fixed during the lifetime of the generator.
+
 * 'PCGen64' is a version which provides 64 bits of output per step by holding
 two different PCGen32 values, running them both one step, and then combining
 both of the results into a single result.
-* 'PCGen' is an architecture specific type alias that always matches the
-output type of the generator to your current machine width.
+
+* 'PCGen' is an architecture-specific type alias that always matches the
+output type of the generator to your current machine width, similar to how
+the 'Int' type always matches size with your current machine width.
 
 Use 'mkPCGen', or one of the width-specific variants, to create new PCGen
 values, and then treat it just like any other 'RandomGen' value.
@@ -115,12 +118,12 @@ data PCGen64 = PCGen64 {
 -- | The Inc value on a PCGen64 must always be odd, so use this
 --   to make sure that's the case. The generators should also have
 --   different increment values from each other, which this also checks.
---   If they are the same, the second generator's inc value is bumped
---   up by two, so that the generators are out of phase with each other.
+--   If they would be the same, the second generator's inc value is bumped
+--   up, so that the generators are always out of phase with each other.
 mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
 mkPCGen64 sa ia sb ib = out
     where out = snd $ stepPCGen64 $ PCGen64 (mkPCGen32 sa (ia+x)) (mkPCGen32 sb ib)
-          x = if ia == ib then 2 else 0
+          x = if (ia .|. 1) == (ib .|. 1) then 2 else 0
 
 -- | Given a PCGen64, produces the next random 64 bits, and the next PCGen64.
 stepPCGen64 :: PCGen64 -> (Word64, PCGen64)
@@ -139,8 +142,8 @@ instance RandomGen PCGen64 where
     genRange _ = (fromIntegral (minBound :: Int),fromIntegral (maxBound :: Int))
     split (PCGen64 genA genB) = (left, right)
         where -- no statistical foundation for this!
-            left = PCGen64 a1 b1
-            right = PCGen64 a2 b2
+            left = mkPCGen64 (getState32 a1) (getInc32 a1) (getState32 b1) (getInc32 b1)
+            right = mkPCGen64 (getState32 a2) (getInc32 a2) (getState32 b2) (getInc32 b2)
             (a1,a2) = split genA
             (b1,b2) = split genB
 
