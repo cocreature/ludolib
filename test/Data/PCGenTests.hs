@@ -41,6 +41,8 @@ pcGen32Tests = describe "PCGen32" $ do
     it "mkPCGen32 always gives odd inc value." $ property $
         \gen32 -> odd (_inc32 gen32)
 
+-- TODO: Test next, genRange, and split for PCGen32
+
 -- -- -- -- --
 -- PCGen64 tests
 -- -- -- -- --
@@ -51,3 +53,5 @@ pcGen64Tests = describe "PCGen64" $ do
         \gen64 -> odd (_inc32._genA $ gen64) && odd (_inc32._genB $ gen64)
     it "mkPCGen64 never gives matching incA and incB." $ property $
         \gen64 -> (_inc32._genA $ gen64) /= (_inc32._genB $ gen64)
+
+-- TODO: Test next, genRange, and split for PCGen64
