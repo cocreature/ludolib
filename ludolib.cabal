@@ -17,9 +17,11 @@ library
     exposed-modules:    Data.PCGen
                         Data.Location2
                         Control.RNG
+                        Util.PPFOV
     build-depends:      base,
                         random,
-                        MonadRandom
+                        MonadRandom,
+                        containers
     default-language:   Haskell2010
     other-extensions:   CPP,
                         ConstraintKinds
