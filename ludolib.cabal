@@ -7,7 +7,7 @@ license:            AGPL
 license-file:       LICENSE.txt
 author:             Lokathor
 maintainer:         zefria@gmail.com
-category:           Game
+category:           Game, Utils
 build-type:         Simple
 extra-source-files: README.md
 cabal-version:      >=1.10
@@ -15,10 +15,14 @@ cabal-version:      >=1.10
 library
     hs-source-dirs:     src
     exposed-modules:    Data.PCGen
+                        Data.Location2
+                        Control.RNG
     build-depends:      base,
-                        random
+                        random,
+                        MonadRandom
     default-language:   Haskell2010
-    other-extensions:   CPP
+    other-extensions:   CPP,
+                        ConstraintKinds
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
 
@@ -31,7 +35,8 @@ test-suite tests
                         QuickCheck,
                         ludolib,
                         base,
-                        random
+                        random,
+                        MonadRandom
     default-language:   Haskell2010
 
 --executable roguelike-hs
