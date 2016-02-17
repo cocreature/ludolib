@@ -1,0 +1,3 @@
+:set prompt LudoLib>
+:set -XOverloadedStrings
+:set +s
