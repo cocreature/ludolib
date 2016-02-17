@@ -10,14 +10,14 @@ module Data.Location2 (
 newtype Location2 = Location2 (Int,Int) deriving (Eq, Ord, Show)
 
 -- | Returns the X component of the Location2.
-getLocX :: Location -> Int
-getLocX (Location (x,_)) = x
+getLoc2X :: Location2 -> Int
+getLoc2X (Location2 (x,_)) = x
 
 -- | Returns the Y component of the Location2.
-getLocY :: Location -> Int
-getLocY (Location (_,y)) = y
+getLoc2Y :: Location2 -> Int
+getLoc2Y (Location2 (_,y)) = y
 
 -- | Given two Int values, constructs a new Location2. Strict
 --   in both arguments.
-mkLocation :: Int -> Int -> Location
-mkLocation !x !y = Location (x,y)
+mkLocation2 :: Int -> Int -> Location2
+mkLocation2 !x !y = Location2 (x,y)
