@@ -1,5 +1,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 
+{-| Provides many operations to randomly generate values in various ways within a
+MonadRandom context.
+-}
 module Control.RNG where
 
 import System.Random (RandomGen, Random, random, randomR)
@@ -8,26 +11,29 @@ import Control.Monad.Random.Class (MonadRandom, getRandom, getRandomR)
 import Data.Foldable (toList)
 import Data.Bits (Bits, (.&.))
 
+{-| Almost every option here is polymorphic for any MonadRandom m, and with an
+output type that can be any value that's both Random and Integral. As fas as I
+know, all the built in Integral types are Random already.
+-}
 type RandIntegralMonad i m = (Random i, Integral i, MonadRandom m)
 
-{-| Rolls a single die with the given number of sides. If the input is less
-than one then the output will always be zero. Otherwise the output will be
-between one and the input, inclusive on both ends.
+{-| Rolls a single die with the given number of sides. If the input is less than
+one then the output will always be zero. Otherwise the output will be between
+one and the input, inclusive on both ends.
 -}
 rollOne :: (RandIntegralMonad i m) => i -> m i
 rollOne n
     | n < 1 = return 0
     | otherwise = getRandomR (1,n)
 
-{-| Given (count,sides), rolls the number of dice specified, each
-with the number of sides specified. Returns the results as a list of
-individual rolls.
+{-| Given (count,sides), rolls the number of dice specified, each with the number
+of sides specified. Returns the results as a list of individual rolls.
 -}
 rollxdy' :: (RandIntegralMonad i m) => (i,i) -> m [i]
 rollxdy' (count,sides) = replicateM (fromIntegral count) (rollOne sides)
 
-{-| Given (count,sides), rolls the number of dice specified, each
-with the number of sides specified. Returns the sum.
+{-| Given (count,sides), rolls the number of dice specified, each with the number
+of sides specified. Returns the sum.
 -}
 rollxdy :: (RandIntegralMonad i m) => (i,i) -> m i
 rollxdy (count,sides) = sum <$> rollxdy' (count,sides)
@@ -39,8 +45,8 @@ number specified.
 rollPool :: (RandIntegralMonad i m) => (i,i,i) -> m i
 rollPool (count,sides,tn) = fromIntegral . length . filter (>= tn) <$> rollxdy' (count,sides)
 
-{-| Rolls a d100 and returns True if the value rolled is equal to
-or less than the input given.
+{-| Rolls a d100 and returns True if the value rolled is equal to or less than the
+input given.
 -}
 rollChance :: (RandIntegralMonad i m) => i -> m Bool
 rollChance c = do
@@ -49,8 +55,8 @@ rollChance c = do
         then return True
         else return False
 
-{-| Rolls a die with a number of sides equal to the second value, and returns
-True if the result is equal to or less than the first value. In other words
+{-| Rolls a die with a number of sides equal to the second value, and returns True
+if the result is equal to or less than the first value. In other words
 "rollChanceIn 3 8" would have a 3 in 8 chance of returning True.
 -}
 rollChanceIn :: (RandIntegralMonad i m) => i -> i -> m Bool
@@ -60,8 +66,8 @@ rollChanceIn times outOf = do
         then return True
         else return False
 
-{-| Selects a random element from a non-empty Foldable. If the Foldable
-is empty, an error will occur.
+{-| Selects a random element from a non-empty Foldable. If the Foldable is empty,
+an error will occur.
 -}
 pickRandom :: (MonadRandom m, Foldable t) => t a -> m a
 pickRandom foldable = do
@@ -72,8 +78,8 @@ pickRandom foldable = do
         then return (list !! (r-1))
         else fail "pickRandom cannot select from an empty foldable."
 
-{-| Like pickRandom, but with type safety! If your target Foldable might be
-empty you should use this.
+{-| Like pickRandom, but with type safety! If your target Foldable might be empty
+you should use this.
 -}
 pickRandomSafe :: (MonadRandom m, Foldable t) => t a -> m (Maybe a)
 pickRandomSafe foldable = do
@@ -84,9 +90,9 @@ pickRandomSafe foldable = do
         then return $ Just $ (list !! (r-1))
         else return Nothing
 
-{-| Rolls an exploding die. That is, if the die gets a maximum result then
-another is rolled and added into the total. As a catch, won't explode if
-N is 1, otherwise that'd just be an infinite loop.
+{-| Rolls an exploding die. That is, if the die gets a maximum result then another
+is rolled and added into the total. As a catch, won't explode if N is 1,
+otherwise that'd just be an infinite loop.
 -}
 rollxpl :: (RandIntegralMonad i m) => i -> m i
 rollxpl n = do
@@ -128,19 +134,19 @@ rollStep4 x = do
             z | z > 0     -> 20 : sides (z-11)
               | otherwise -> [1]
 
-{-| Rolls a number of dice where each die has a +1, 0, or -1
-on it, and returns the total. Obviously this is prone to giving negative
-results, so it won't work with Word and stuff.
+{-| Rolls a number of dice where each die has a +1, 0, or -1 on it, and returns
+the total. Obviously this is prone to giving negative results, so it won't work
+with Word and stuff.
 -}
 rollChocolate :: (RandIntegralMonad i m) => i -> m i
 rollChocolate numDice
     | numDice > 0 = (subtract (2 * numDice)) <$> rollxdy (numDice,3)
     | otherwise = return 0
 
-{-| Rolls a number of dice, each with the given number of sides.
-If a die rolls maximum, another is rolled and added into the total
-with a -1. The sides of the extra die depends on the original:
-1-19 -> same as the input; 20-99 -> 6; 100+ -> 20
+{-| Rolls a number of dice, each with the given number of sides.  If a die rolls
+maximum, another is rolled and added into the total with a -1. The sides of the
+extra die depends on the original: 1-19 -> same as the input; 20-99 -> 6; 100+
+-> 20
 -}
 rollOneHack :: (RandIntegralMonad i m) => i -> m i
 rollOneHack sides = do
@@ -162,9 +168,9 @@ rollHack :: (RandIntegralMonad i m) => (i,i) -> m i
 rollHack (numDice,numSides) =
     sum <$> mapM rollOneHack (replicate (fromIntegral numDice) numSides)
 
-{-| Rolls a number that's 1 or more, with an exponentially
-decreasing chance of being each number above 1 (controlled by x),
-and a cap of lv/3 (minimum cap of 5).
+{-| Rolls a number that's 1 or more, with an exponentially decreasing chance of
+being each number above 1 (controlled by x), and a cap of lv/3 (minimum cap of
+5).
 -}
 rollExp :: (RandIntegralMonad i m) => i -> i -> m i
 rollExp x lv
@@ -174,9 +180,9 @@ rollExp x lv
         roll <- rollxpl x
         return $ min limit ((roll `div` x) + 1)
 
-{-| Rolls a number between 0 and (x-1), influenced by luck. Higher luck makes
-the result more likely to be 0. Luck should not exceed 50, and x should not
-be less than 1.
+{-| Rolls a number between 0 and (x-1), influenced by luck. Higher luck makes the
+result more likely to be 0. Luck should not exceed 50, and x should not be less
+than 1.
 -}
 rollLuck :: (RandIntegralMonad i m, Bits i) => i -> i -> m i
 rollLuck x luck = do
@@ -188,8 +194,8 @@ rollLuck x luck = do
                 else return $ min (max 0 (i-luck)) (x-1)
         else return i
 
-{-| Rolls a totally bizarre number. It might be around half the
-input, or it might not be. Not much more can be said.
+{-| Rolls a totally bizarre number. It might be around half the input, or it might
+not be. Not much more can be said.
 -}
 rollZ :: (RandIntegralMonad i m) => i -> i -> m i
 rollZ i lv

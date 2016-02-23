@@ -1,10 +1,10 @@
 
 name:               ludolib
-version:            0.0.1
+version:            0.0.2
 synopsis:           A library of game utilities.
 homepage:           https://github.com/Lokathor/ludolib
 license:            AGPL
-license-file:       LICENSE.txt
+license-file:       AGPL.txt
 author:             Lokathor
 maintainer:         zefria@gmail.com
 category:           Game, Utils
@@ -15,7 +15,7 @@ cabal-version:      >=1.10
 library
     hs-source-dirs:     src
     exposed-modules:    Data.PCGen
-                        Data.Location2
+                        Data.Location
                         Control.RNG
                         Util.PPFOV
     build-depends:      base,
