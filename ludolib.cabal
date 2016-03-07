@@ -18,6 +18,7 @@ library
                         Data.Location
                         Control.RNG
                         Util.PPFOV
+                        Util.PPFOVNew
     build-depends:      base,
                         random,
                         MonadRandom,
@@ -27,6 +28,17 @@ library
                         ConstraintKinds
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
+
+executable ludobench
+    main-is:            LudoBench.hs
+    hs-source-dirs:     test
+    default-language:   Haskell2010
+    build-depends:      base,
+                        ludolib,
+                        criterion,
+                        deepseq,
+                        containers
+    ghc-options:        -O2
 
 test-suite tests
     type:               exitcode-stdio-1.0
@@ -40,10 +52,3 @@ test-suite tests
                         random,
                         MonadRandom
     default-language:   Haskell2010
-
---executable roguelike-hs
---    main-is:            Main.hs
---    hs-source-dirs:     src
---    default-language:   Haskell2010
---    build-depends:      roguelike-hs
---    ghc-options:        -threaded -rtsopts -with-rtsopts=-N
