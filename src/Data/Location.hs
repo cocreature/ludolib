@@ -25,3 +25,4 @@ getLocY (Location (_,y)) = y
 -}
 strictLocation :: Int -> Int -> Location
 strictLocation !x !y = Location (x,y)
+

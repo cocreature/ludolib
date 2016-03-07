@@ -9,11 +9,18 @@ Bool of if vision is blocked between the locations or not. It will generally be
 a cheaper computation than doing a full FOV calc, if you care about that sort of
 micro-optimization.
 -}
-module Util.PPFOVNew where
+module Util.PPFOVNew (
+    VisionBlocked,
+    computeFOV,
+    isLOSBetween
+    ) where
 
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Location
+
+import Control.Monad.ST
+import Data.STRef
 
 {-| A VisionBlocked is a function that, given a Location, says if that Location
 blocks vision or not. Each such function is naturally specific to a particular
@@ -27,7 +34,7 @@ type VisionBlocked = Location -> Bool
 of all Locations that can be seen.
 -}
 computeFOV :: VisionBlocked -> Int -> Location -> Set Location
-computeFOV vision range start = unionMap (checkQuadrant vision range start) [One .. Four]
+computeFOV vision range start = Set.unions $ map (checkQuadrant vision range start) [One .. Four]
 
 {-| Untested, but should be correct. If this is the only thing you want to know,
 then this should end up being faster than a full FOV.
@@ -54,38 +61,34 @@ isLOSBetween vision locA locB =
 -- Here begins the module-internal functions.
 -- -- --
 
--- | Given an index, list, and new value, returns a list that
---   has the new value inserted at the index given.
-add :: (Integral a) => a -> [b] -> b -> [b]
-add a (b:bs) new
-    | a <  0 = b : bs
-    | a == 0 = new : b : bs
-    | otherwise = b : add (a-1) bs new
-add 0 []     new = [new]
-add _ []     _ = []
+-- | Given an index, new value, and list, returns a list that
+--   has the new value inserted immediately before the index given.
+add :: Int -> a -> [a] -> [a]
+add i new list@(x:xs)
+    | i <  0 = error $ "Can't add at a ngative index: "++(show i)
+    | i == 0 = new : list
+    | otherwise = x : add (i-1) new xs
+add 0 new [] = [new]
+add i _   [] = error $ "Can't add into an empty list at index "++(show i)
 
--- | Given an index, list, and new value, returns a list that
+-- | Given an index, new value, and a list, returns a list that
 --   has the new value at the index given instead.
-update :: (Integral a) => a -> [b] -> b -> [b]
-update a (b:bs) new
-    | a <  0 = b : bs
-    | a == 0 = new : bs
-    | otherwise = b : update (a-1) bs new
-update _ []     _ = []
+update :: Int -> a -> [a] -> [a]
+update i new (x:xs) 
+    | i <  0 = error $ "Can't update a negative index: "++(show i)
+    | i == 0 = new : xs
+    | otherwise = x : update (i-1) new xs
+update 0 _ [] = []
+update i _ [] = error $ "Can't update an empty list at index "++(show i)
 
 -- | Remove the index specified from the list. If the index given
 --   is greater than the length of the list there's no error.
-remove :: (Integral a) => a -> [b] -> [b]
-remove a (b:bs)
-    | a <  0 = b : bs
-    | a == 0 = bs
-    | otherwise = b : remove (a-1) bs
-remove _ [] = []
-
--- | Maps the function given over the list given, and return a set
---   that is the union of all the result sets.
-unionMap :: (Ord b) => (a -> Set b) -> [a] -> Set b
-unionMap f list = Set.unions $ map f list
+remove :: Int -> [a] -> [a]
+remove i (x:xs)
+    | i <  0 = error $ "Can't remove from a negative index! "++(show i)
+    | i == 0 = xs
+    | otherwise = x : remove (i-1) xs
+remove i [] = error $ "Can't index "++(show i)++" from an empty list!"
 
 -- | A sight line within a view. Has some associated geometry functions.
 newtype SightLine = SightLine (Location,Location) deriving (Eq, Show)
@@ -203,22 +206,34 @@ mkQuadrant x y = if x > 0
 -- | Performs view calculations on a single Quadrant relative to the start
 --   position of the overall FOV computation.
 checkQuadrant :: VisionBlocked -> Int -> Location -> Quadrant -> Set Location
-checkQuadrant vision range start quadrant = checkSub coordsToCheck (Set.singleton start) startViewList
-    where shallowLineStart = mkSightLine 0 1 range 0
-          steepLineStart   = mkSightLine 1 0 0     range
-          startViewList = [mkView shallowLineStart steepLineStart]
-          coordsToCheck = coordsFromRange range
-          {- During each subfunction pass, if there are no more active views we halt
-          and return the set of visited coordinates so far. Otherwise we use visitCoord
-          to compute the next pass, giving us a new set of visited coordinates and
-          a new list of active views. -}
-          checkSub :: [Location] -> Set Location -> [View] -> Set Location
-          checkSub _      visited []          = visited
-          checkSub []     visited _           = visited
-          checkSub (c:cs) visited activeViews = checkSub cs newVisited newActiveViews
-            where (newVisited,newActiveViews) = visitCoord visited start dx dy quadrant activeViews vision
-                  dx = getLocX c
-                  dy = getLocY c
+checkQuadrant vision range start quadrant = let
+    shallowLineStart = mkSightLine 0 1 range 0
+    steepLineStart   = mkSightLine 1 0 0 range
+    startViewList    = [mkView shallowLineStart steepLineStart]
+    coordsToCheck    = coordsFromRange range
+    in runST $ do
+        viewsRef <- newSTRef startViewList
+        visitedRef <- newSTRef (Set.singleton start)
+        checkSub vision start quadrant coordsToCheck visitedRef viewsRef
+        readSTRef visitedRef
+
+{- During each subfunction pass, if there are no more active views we halt
+and return the set of visited coordinates so far. Otherwise we use visitCoord
+to compute the next pass, giving us a new set of visited coordinates and
+a new list of active views. -}
+checkSub :: VisionBlocked -> Location -> Quadrant -> [Location] -> STRef s (Set Location) -> STRef s [View] -> ST s ()
+checkSub vision start quadrant targets visitedRef viewsRef = do
+    case targets of
+        [] -> return ()
+        (targHead:targTail) -> do
+            views <- readSTRef viewsRef
+            if null views
+                then return ()
+                else do
+                    let dx = getLocX targHead
+                    let dy = getLocY targHead
+                    visitCoord vision start quadrant dx dy visitedRef viewsRef
+                    checkSub vision start quadrant targTail visitedRef viewsRef
 
 -- | Turns a range for the vision into a list of the locations, relative
 --   to the start position, that should be checked per quadrant.
@@ -251,24 +266,6 @@ nextLine pred line@(SightLine (i,f)) loc = if line `pred` loc
     then SightLine (loc,f)
     else line
 
-{-
-{-| Removes the view at the viewIndex specified from the activeViews if both
-of the view's lines are collinear and they also pass through either extremity;
-(0,1) and (1,0). The corners of the source square cannot be used as the origin
-of a view, and so if this happens the view needs to be removed. This needs to be
-called after every view update for all views.
--}
-checkView :: [View] -> Int -> [View]
--- TODO: Remove this once it's confirmed to no longer be needed.
-checkView activeViews viewIndex = if shallowIsSteep && lineOnExtremity
-    then remove viewIndex activeViews
-    else activeViews
-        where shallowIsSteep = shallowLine `isLineCollinear` steepLine
-              lineOnExtremity = (shallowLine `isCollinear` (strictLocation 0 1) || shallowLine `isCollinear` (strictLocation 1 0))
-              shallowLine = getShallowLine (activeViews !! viewIndex)
-              steepLine = getSteepLine (activeViews !! viewIndex)
--}
-
 {-| A View gets adjusted to be thinner and thinner as it's bumped by shallow
 and steep bumps. A View remains valid until both of its lines are collinear
 and they pass through either extremity of the origin square, (0,1) or (1,0).
@@ -282,42 +279,47 @@ validView view = not (shallowIsSteep && lineOnExtremity)
           steepLine = getSteepLine view
 
 -- | Applies a bump operation, checks, and returns the new view list as a single operation.
-bumpAndCheck :: (View -> Location -> View) -> [View] -> Int -> Location -> [View]
-bumpAndCheck bumpf activeViews viewIndex bump = out
+bumpAndCheck :: (View -> Location -> View) -> Int -> Location -> [View] -> [View]
+bumpAndCheck bumpf viewIndex bump activeViews = out
     where view = activeViews !! viewIndex
           bumpedView = bumpf view bump
           out = if validView bumpedView
-            then update viewIndex activeViews bumpedView
+            then update viewIndex bumpedView activeViews
             else remove viewIndex activeViews
 
 -- | Adds a single Location to the set of visited locations if it's within
 --   one of the views, and updates any views as necessary.
-visitCoord :: Set Location -> Location -> Int -> Int -> Quadrant -> [View] -> VisionBlocked -> (Set Location,[View])
-visitCoord visited start dx dy quadrant activeViews vision =
+visitCoord :: VisionBlocked -> Location -> Quadrant -> Int -> Int -> STRef s (Set Location) -> STRef s [View] -> ST s ()
+visitCoord vision start quadrant dx dy visitedRef viewsRef = do
     let topLeft = strictLocation dx (dy+1)
-        bottomRight = strictLocation (dx+1) dy
-        realX = dx * getSignX quadrant
-        realY = dy * getSignY quadrant
-        trueLocation = strictLocation (getLocX start + realX) (getLocY start + realY)
-        viewIndex = calcViewIndex activeViews bottomRight
-        -- let bindings below here could be floated up, but they're grouped near the if statement they relate to.
-        in if viewIndex == (length activeViews) || (getShallowLine (activeViews !! viewIndex)) `isAboveOrCollinear` topLeft
-            then (visited, activeViews) -- No compatible views. Return without altering visited or activeViews
-            else let newVisited = Set.insert trueLocation visited
-                     visionBlocked = vision trueLocation
-                     in if visionBlocked
-                        then let currentView = activeViews !! viewIndex -- Vision is blocked, calculate how it affects the view.
-                                 shallowAboveBottomRight = (getShallowLine currentView) `isAbove` bottomRight
-                                 steepBelowTopLeft = (getSteepLine currentView) `isBelow` topLeft
-                                 in case (shallowAboveBottomRight, steepBelowTopLeft) of
-                                    (True, True) -> (newVisited, remove viewIndex activeViews)
-                                    (True, False) -> (newVisited, bumpAndCheck addShallowBump activeViews viewIndex topLeft)
-                                    (False, True) -> (newVisited, bumpAndCheck addSteepBump activeViews viewIndex bottomRight)
-                                    (False, False) -> let clonedViews = add viewIndex activeViews currentView in
-                                                      let shallowChecked = bumpAndCheck addShallowBump clonedViews (viewIndex+1) topLeft in
-                                                      let steepChecked = bumpAndCheck addSteepBump shallowChecked viewIndex bottomRight
-                                                          in (newVisited, steepChecked)
-                        else (newVisited,activeViews) -- Vision not blocked, we don't adjust any views.
+    let bottomRight = strictLocation (dx+1) dy
+    let realX = dx * getSignX quadrant
+    let realY = dy * getSignY quadrant
+    let trueLocation = strictLocation (getLocX start + realX) (getLocY start + realY)
+    activeViews <- readSTRef viewsRef
+    let viewIndex = calcViewIndex activeViews bottomRight
+    if viewIndex == (length activeViews) || (getShallowLine (activeViews !! viewIndex)) `isAboveOrCollinear` topLeft
+        then return () -- No compatible views. Return without altering anything
+        else do
+            modifySTRef' visitedRef (Set.insert trueLocation)
+            if vision trueLocation -- is vision blocked where we are?
+                then do -- vision is blocked, we need to update the views
+                    let currentView = activeViews !! viewIndex -- Vision is blocked, calculate how it affects the view.
+                    let shallowAboveBottomRight = (getShallowLine currentView) `isAbove` bottomRight
+                    let steepBelowTopLeft = (getSteepLine currentView) `isBelow` topLeft
+                    case (shallowAboveBottomRight, steepBelowTopLeft) of
+                        (True, True) -> modifySTRef' viewsRef $ remove viewIndex
+                        (True, False) -> modifySTRef' viewsRef $ bumpAndCheck addShallowBump viewIndex topLeft
+                        (False, True) -> modifySTRef' viewsRef $ bumpAndCheck addSteepBump viewIndex bottomRight
+                        (False, False) -> do
+                            -- clone the current view
+                            modifySTRef' viewsRef $ add viewIndex currentView
+                            -- check the shallow
+                            -- we do this first so that if it's removed it won't affect our bump/check of the steep
+                            modifySTRef' viewsRef $ bumpAndCheck addShallowBump (viewIndex+1) topLeft
+                            -- check the steep
+                            modifySTRef' viewsRef $ bumpAndCheck addSteepBump viewIndex bottomRight
+                else return () -- Vision not blocked, we don't adjust any views.
 
 -- | Calculates the index within the list that the view appropriate to the
 --   Location specified has. If no view is appropriate to the Location

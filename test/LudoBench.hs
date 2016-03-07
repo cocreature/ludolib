@@ -3,6 +3,7 @@
 module Main where
 
 import Criterion.Main
+
 import Control.DeepSeq
 
 import Data.Location
@@ -14,7 +15,9 @@ instance NFData Location where
     -- rnf :: a -> ()
     rnf l@(Location (x,y)) = x `seq` y `seq` l `seq` ()
 
+vb = (\(Location (x,y)) -> if x > 30 || y > 30 then True else False)
+
 main = defaultMain [
-    bench "Old" $ nf (Old.computeFOV (const True) 5) (Location (0,0)),
-    bench "New" $ nf (New.computeFOV (const True) 5) (Location (0,0))
+    bench "Old" $ nf (Old.computeFOV vb 50) (Location (0,0)),
+    bench "New" $ nf (New.computeFOV vb 50) (Location (0,0))
     ]
