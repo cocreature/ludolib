@@ -18,7 +18,7 @@ library
                         Data.Location
                         Control.RNG
                         Util.PPFOV
-                        Util.PPFOVNew
+                        Util.PPFOVST
     build-depends:      base,
                         random,
                         MonadRandom,

@@ -9,7 +9,7 @@ Bool of if vision is blocked between the locations or not. It will generally be
 a cheaper computation than doing a full FOV calc, if you care about that sort of
 micro-optimization.
 -}
-module Util.PPFOVNew (
+module Util.PPFOVST (
     VisionBlocked,
     computeFOV,
     isLOSBetween
