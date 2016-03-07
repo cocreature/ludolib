@@ -22,8 +22,7 @@ library
     build-depends:      base,
                         random,
                         MonadRandom,
-                        containers,
-                        parallel
+                        containers
     default-language:   Haskell2010
     other-extensions:   CPP,
                         ConstraintKinds
