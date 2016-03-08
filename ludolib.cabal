@@ -17,8 +17,8 @@ library
     exposed-modules:    Data.PCGen
                         Data.Location
                         Control.RNG
+                        Control.Loops
                         Util.PPFOV
-                        Util.PPFOVST
     build-depends:      base,
                         random,
                         MonadRandom,
