@@ -9,7 +9,7 @@ Bool of if vision is blocked between the locations or not. It will generally be
 a cheaper computation than doing a full FOV calc, if you care about that sort of
 micro-optimization.
 -}
-module Util.PPFOVNext (
+module Util.PPFOV (
     VisionBlocked,
     computeFOV,
     isLOSBetween
@@ -19,12 +19,12 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Location
 
--- Switching to ST reduced the time taken by 40%
+-- Using ST reduces the time taken by 40%
 import Control.Monad
 import Control.Monad.ST
 import Data.STRef
 
--- Used unboxed intermediate values cut the time taken by another 25%
+-- Using unboxed intermediate values cuts the time taken by another 25%
 import GHC.Prim
 import GHC.Exts
 
