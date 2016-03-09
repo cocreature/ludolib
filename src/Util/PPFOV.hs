@@ -1,4 +1,4 @@
-
+{-# LANGUAGE MagicHash, BangPatterns #-}
 
 {-| Computes the field of view that's visible from a given location. Use
 'computeFOV' and supply a 'VisionBlocked' function, the computation range, and
@@ -9,7 +9,7 @@ Bool of if vision is blocked between the locations or not. It will generally be
 a cheaper computation than doing a full FOV calc, if you care about that sort of
 micro-optimization.
 -}
-module Util.PPFOV (
+module Util.PPFOVNext (
     VisionBlocked,
     computeFOV,
     isLOSBetween
@@ -19,9 +19,14 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Location
 
+-- Switching to ST reduced the time taken by 40%
 import Control.Monad
 import Control.Monad.ST
 import Data.STRef
+
+-- Used unboxed intermediate values cut the time taken by another 25%
+import GHC.Prim
+import GHC.Exts
 
 {-| A VisionBlocked is a function that, given a Location, says if that Location
 blocks vision or not. Each such function is naturally specific to a particular
@@ -35,132 +40,133 @@ type VisionBlocked = Location -> Bool
 of all Locations that can be seen.
 -}
 computeFOV :: VisionBlocked -> Int -> Location -> Set Location
-computeFOV visionB range start = Set.unions $ map (checkQuadrant visionB range start) [One,Two,Three,Four]
+computeFOV visionB range start = Set.unions $ [
+    checkQuadrant visionB range start 1# 1#,
+    checkQuadrant visionB range start 1# (-1#),
+    checkQuadrant visionB range start (-1#) 1#,
+    checkQuadrant visionB range start (-1#) (-1#)]
+
 
 {-| Untested, but should be correct. If this is the only thing you want to know,
 then this should end up being faster than a full FOV.
 -}
 isLOSBetween :: VisionBlocked -> Location -> Location -> Bool
-isLOSBetween vision locA locB =
-    let manhattan = max (abs $ getLocX locA - getLocX locB) (abs $ getLocY locA - getLocY locA)
-    -- TODO: this can probably be done with mkQuadrant by subtracting the A points from the B points.
-        in case getLocX locA `compare` getLocX locB of
-            LT -> case getLocY locA `compare` getLocY locB of
-                LT -> Set.member locB (checkQuadrant vision manhattan locA One) -- a.x < b.x && a.y < b.y
-                EQ -> Set.member locB (checkQuadrant vision manhattan locA One) -- a.x < b.x && a.y == b.y
-                GT -> Set.member locB (checkQuadrant vision manhattan locA Four) -- a.x < b.x && a.y > b.y
-            EQ -> case getLocY locA `compare` getLocY locB of
-                LT -> Set.member locB (checkQuadrant vision manhattan locA One) -- a.x == b.x && a.y < b.y
-                EQ -> True -- locA is locB, no need to compute anything.
-                GT -> Set.member locB (checkQuadrant vision manhattan locA Four) -- a.x == b.x && a.y > b.y
-            GT -> case getLocY locA `compare` getLocY locB of
-                LT -> Set.member locB (checkQuadrant vision manhattan locA Two) -- a.x > b.x && a.y < b.y
-                EQ -> Set.member locB (checkQuadrant vision manhattan locA Two) -- a.x > b.x && a.y == b.y
-                GT -> Set.member locB (checkQuadrant vision manhattan locA Three) -- a.x > b.x && a.y > b.y
+isLOSBetween vision locA locB = 
+    let !(I# qx) = getLocX locA - getLocX locB
+        !(I# qy) = getLocY locA - getLocY locB
+        manhattanDist = max (abs $ getLocX locA - getLocX locB) (abs $ getLocY locA - getLocY locA)
+    in Set.member locB (checkQuadrant vision manhattanDist locA qx qy)
 
 -- -- --
 -- Here begins the module-internal functions.
 -- -- --
 
+indexError = error "Index error."
+
 -- | Given an index, new value, and list, returns a list that
 --   has the new value inserted immediately before the index given.
-add :: Int -> a -> [a] -> [a]
-add i new list@(x:xs)
-    | i <  0 = error $ "Can't add at a ngative index: " ++ show i
-    | i == 0 = new : list
-    | otherwise = x : add (i-1) new xs
-add 0 new [] = [new]
-add i _   [] = error $ "Can't add into an empty list at index " ++ show i
+add :: Int# -> a -> [a] -> [a]
+add i new list
+    | isTrue# (i ># 0#) = case list of
+        (x:xs) -> x : add (i -# 1#) new xs
+        [] -> indexError
+    | isTrue# (i ==# 0#) = new : list
+    | otherwise = indexError
 
 -- | Given an index, new value, and a list, returns a list that
 --   has the new value at the index given instead.
-update :: Int -> a -> [a] -> [a]
-update i new (x:xs) 
-    | i <  0 = error $ "Can't update a negative index: " ++ show i
-    | i == 0 = new : xs
-    | otherwise = x : update (i-1) new xs
-update 0 _ [] = []
-update i _ [] = error $ "Can't update an empty list at index " ++ show i
+update :: Int# -> a -> [a] -> [a]
+update i new list
+    | isTrue# (i ># 0#) = case list of
+        (x:xs) -> x : update (i -# 1#) new xs
+        [] -> indexError
+    | isTrue# (i ==# 0#) = case list of
+        (x:xs) -> new : xs
+        [] -> indexError
+    | otherwise = indexError
 
 -- | Remove the index specified from the list. If the index given
 --   is greater than the length of the list there's no error.
-remove :: Int -> [a] -> [a]
-remove i (x:xs)
-    | i <  0 = error $ "Can't remove from a negative index! " ++ show i
-    | i == 0 = xs
-    | otherwise = x : remove (i-1) xs
-remove i [] = error $ "Can't index " ++ show i ++" from an empty list!"
+remove :: Int# -> [a] -> [a]
+remove i list
+    | isTrue# (i ># 0#) = case list of
+        (x:xs) -> x : remove (i -# 1#) xs
+        [] -> indexError
+    | isTrue# (i ==# 0#) = case list of
+        (x:xs) -> xs
+        [] -> indexError
+    | otherwise = indexError
+
+infixr 1 #!
+(#!) :: [a] -> Int# -> a
+list #! i
+    | isTrue# (i ># 0#) = (tail list) #! (i -# 1#)
+    | isTrue# (i ==# 0#) = head list
+    | otherwise = error "Negative Index."
+
+ubLen :: [a] -> Int#
+ubLen = go 0#
+    where go !acc [] = acc
+          go !acc (x:xs) = go (acc +# 1#) xs
 
 -- | A sight line within a view. Has some associated geometry functions.
-newtype SightLine = SightLine (Location,Location) deriving (Eq, Show)
+data SightLine = SightLine Int# Int# Int# Int# deriving (Eq, Show)
 
 -- | The X of the initial Location of a SightLine
-getXInitial :: SightLine -> Int
-getXInitial (SightLine (initial,_)) = getLocX initial
+getXInitial :: SightLine -> Int#
+getXInitial (SightLine xi yi xf yf) = xi
 
 -- | The Y of the initial Location of a SightLine
-getYInitial :: SightLine -> Int
-getYInitial (SightLine (initial,_)) = getLocY initial
+getYInitial :: SightLine -> Int#
+getYInitial (SightLine xi yi xf yf) = yi
 
 -- | The X of the final Location of a SightLine
-getXFinal :: SightLine -> Int
-getXFinal (SightLine (_,final)) = getLocX final
+getXFinal :: SightLine -> Int#
+getXFinal (SightLine xi yi xf yf) = xf
 
 -- | The Y of the final Location of a SightLine
-getYFinal :: SightLine -> Int
-getYFinal (SightLine (_,final)) = getLocY final
-
--- | The initial location of the SightLine
-getInitial :: SightLine -> Location
-getInitial (SightLine (initial,_)) = initial
-
--- | The final location of the SightLine
-getFinal :: SightLine -> Location
-getFinal (SightLine (_,final)) = final
+getYFinal :: SightLine -> Int#
+getYFinal (SightLine xi yi xf yf) = yf
 
 -- | Makes a new SightLine given an xInitial, yInitial, xFinal, and yFinal
-mkSightLine :: Int -> Int -> Int -> Int -> SightLine
-mkSightLine xi yi xf yf = SightLine (strictLocation xi yi, strictLocation xf yf)
+mkSightLine :: Int# -> Int# -> Int# -> Int# -> SightLine
+mkSightLine xi yi xf yf = SightLine xi yi xf yf
 
 -- | The relative slope between a SightLine and a Location
-relativeSlope :: SightLine -> Location -> Int
-relativeSlope line loc = (dy * (xf - x)) - (dx * (yf - y))
-    where x = getLocX loc
-          y = getLocY loc
-          xf = getXFinal line
-          yf = getYFinal line
-          dx = xf - getXInitial line
-          dy = yf - getYInitial line
+relativeSlope :: SightLine -> Int# -> Int# -> Int#
+relativeSlope (SightLine xi yi xf yf) lx ly = ((yf -# yi) *# (xf -# lx)) -# ((xf -# xi) *# (yf -# lx))
 
 -- | If the SightLine is entirely above the Location or not.
-isAbove :: SightLine -> Location -> Bool
-isAbove line loc = relativeSlope line loc < 0
+isAbove :: SightLine -> Int# -> Int# -> Bool
+isAbove line lx ly = isTrue# (relativeSlope line lx ly <# 0#)
 
 -- | If the SightLine is above or touching the Location, or not.
-isAboveOrCollinear :: SightLine -> Location -> Bool
-isAboveOrCollinear line loc = relativeSlope line loc <= 0
+isAboveOrCollinear :: SightLine -> Int# -> Int# -> Bool
+isAboveOrCollinear line lx ly = isTrue# (relativeSlope line lx ly <=# 0#)
 
 -- | If the SightLine is entirely below the Location or not.
-isBelow :: SightLine -> Location -> Bool
-isBelow line loc = relativeSlope line loc > 0
+isBelow :: SightLine -> Int# -> Int# -> Bool
+isBelow line lx ly = isTrue# (relativeSlope line lx ly ># 0#)
 
 -- | If the SightLine is below or touching the Locaiton, or not.
-isBelowOrCollinear :: SightLine -> Location -> Bool
-isBelowOrCollinear line loc = relativeSlope line loc >= 0
+isBelowOrCollinear :: SightLine -> Int# -> Int# -> Bool
+isBelowOrCollinear line lx ly = isTrue# (relativeSlope line lx ly >=# 0#)
 
 -- | If the SightLine is touching the Location or not.
-isCollinear :: SightLine -> Location -> Bool
-isCollinear line loc = relativeSlope line loc == 0
+isCollinear :: SightLine -> Int# -> Int# -> Bool
+isCollinear line lx ly = isTrue# (relativeSlope line lx ly ==# 0#)
 
 -- | If two lines are exactly aligned or not.
 isLineCollinear :: SightLine -> SightLine -> Bool
-isLineCollinear lineA lineB = (lineA `isCollinear` getInitial lineB) && (lineA `isCollinear` getFinal lineB)
+isLineCollinear lineA (SightLine xi yi xf yf) = (isCollinear lineA xi yi) && (isCollinear lineA xf yf)
+
+data ViewBump = ViewBump Int# Int# deriving (Eq,Show)
 
 -- | A View within the FOV process.
 data View = View {
-    getShallowBumps :: [Location],
+    getShallowBumps :: [ViewBump],
     getShallowLine :: SightLine,
-    getSteepBumps :: [Location],
+    getSteepBumps :: [ViewBump],
     getSteepLine :: SightLine
     } deriving (Eq, Show)
 
@@ -173,65 +179,42 @@ mkView shallowLine steepLine = View {
     getSteepBumps=[],
     getSteepLine=steepLine}
 
--- | Reprisents the four quadrants of a cartesian grid.
-data Quadrant = One
-              | Two
-              | Three
-              | Four
-              deriving (Show)
-
--- | Given a Quadrant, returns the signum of X coordinates in that Quadrant.
-getSignX :: Quadrant -> Int
-getSignX One   =  1
-getSignX Two   = -1
-getSignX Three = -1
-getSignX Four  =  1
-
--- | Given a Quadrant, returns the signum of Y coordinates in that Quadrant.
-getSignY :: Quadrant -> Int
-getSignY One   =  1
-getSignY Two   =  1
-getSignY Three = -1
-getSignY Four  = -1
-
--- | Constructs a Quadrant from two Int values, based on their sign.
-mkQuadrant :: Int -> Int -> Quadrant
-mkQuadrant x y = if x > 0
-    then if y > 0
-            then One
-            else Four
-    else if y > 0
-            then Two
-            else Three
+boxLocation :: Int# -> Int# -> Location
+boxLocation x y = strictLocation (I# x) (I# y)
 
 -- | Performs view calculations on a single Quadrant relative to the start
 --   position of the overall FOV computation.
--- TODO: Eliminate the Quadrant type entirely and just accept two ints/bools here.
-checkQuadrant :: VisionBlocked -> Int -> Location -> Quadrant -> Set Location
-checkQuadrant visionB range start quadrant = let
-    shallowLineStart = mkSightLine 0 1 range 0
-    steepLineStart   = mkSightLine 1 0 0 range
+checkQuadrant :: VisionBlocked -> Int -> Location -> Int# -> Int# -> Set Location
+checkQuadrant visionB range start qx qy = let
+    !(I# ubRange)    = range
+    shallowLineStart = mkSightLine 0# 1# ubRange 0#
+    steepLineStart   = mkSightLine 1# 0# 0# ubRange
     startViewList    = [mkView shallowLineStart steepLineStart]
     coordsToCheck    = coordsFromRange range
+    !(I# startX)     = getLocX start
+    !(I# startY)     = getLocY start
     in runST $ do
         viewsRef <- newSTRef startViewList
-        visitedRef <- newSTRef (Set.singleton start) -- TODO: This should be a list that we just prepend to.
-        checkSub visionB start quadrant coordsToCheck visitedRef viewsRef
+        visitedRef <- newSTRef (Set.singleton start)
+        checkSub visionB startX startY qx qy coordsToCheck visitedRef viewsRef
         readSTRef visitedRef
 
-{- During each subfunction pass, if there are no more active views we halt
-and return the set of visited coordinates so far. Otherwise we use visitCoord
-to compute the next pass, giving us a new set of visited coordinates and
-a new list of active views. -}
-checkSub :: VisionBlocked -> Location -> Quadrant -> [Location] -> STRef s (Set Location) -> STRef s [View] -> ST s ()
-checkSub visionB start quadrant [] visitedRef viewsRef = return ()
-checkSub visionB start quadrant (t:ts) visitedRef viewsRef = do
+{-| During each subfunction pass, if there are no more active views we halt and
+return the set of visited coordinates so far. Otherwise we use visitCoord to
+compute the next pass, giving us a new set of visited coordinates and a new list
+of active views.
+
+This [Location] based recursion is faster than a self-written Int# based for loop.
+-}
+checkSub :: VisionBlocked -> Int# -> Int# -> Int# -> Int# -> [Location] -> STRef s (Set Location) -> STRef s [View] -> ST s ()
+checkSub visionB startX startY qx qy [] visitedRef viewsRef = return ()
+checkSub visionB startX startY qx qy (t:ts) visitedRef viewsRef = do
     views <- readSTRef viewsRef
     unless (null views) $ do
-        let dx = getLocX t
-        let dy = getLocY t
-        visitCoord visionB start quadrant dx dy visitedRef viewsRef
-        checkSub visionB start quadrant ts visitedRef viewsRef
+        let !(I# dx) = getLocX t
+            !(I# dy) = getLocY t
+        visitCoord visionB startX startY qx qy dx dy visitedRef viewsRef
+        checkSub visionB startX startY qx qy ts visitedRef viewsRef
 
 -- | Turns a range for the vision into a list of the locations, relative
 --   to the start position, that should be checked per quadrant.
@@ -244,26 +227,26 @@ coordsFromRange range = do
     j <- [startJ..(maxJ-1)]
     return $ strictLocation (i-j) j
 
--- TODO: Make these into Location -> View -> View funcs
-
 -- | Adds the Location into the View as a new shallow bump, updating
 --   the rest of the View as required.
-addShallowBump :: View -> Location -> View
-addShallowBump view loc = view {getShallowBumps = newShallowBumps, getShallowLine = newShallowLine}
-    where newShallowBumps = loc : getShallowBumps view
-          newShallowLine = foldl (nextLine isAbove) (SightLine (getInitial (getShallowLine view),loc)) (getSteepBumps view)
+addShallowBump :: Int# -> Int# -> View -> View
+addShallowBump lx ly view = view {getShallowBumps = newShallowBumps, getShallowLine = newShallowLine}
+    where newShallowBumps = ViewBump lx ly : getShallowBumps view
+          !(SightLine oxi oyi oxf oyf) = getShallowLine view
+          newShallowLine = foldl (nextLine isAbove) (SightLine oxi oyi lx ly) (getSteepBumps view)
 
 -- | Adds the Location into the View as a new steep bump, updating
 --   the rest of the View as required.
-addSteepBump :: View -> Location -> View
-addSteepBump view loc = view {getSteepBumps = newSteepBumps, getSteepLine = newSteepLine}
-    where newSteepBumps = loc : getSteepBumps view
-          newSteepLine = foldl (nextLine isBelow) (SightLine (getInitial (getSteepLine view),loc)) (getShallowBumps view)
+addSteepBump :: Int# -> Int# -> View -> View
+addSteepBump lx ly view = view {getSteepBumps = newSteepBumps, getSteepLine = newSteepLine}
+    where newSteepBumps = ViewBump lx ly : getSteepBumps view
+          !(SightLine oxi oyi oxf oyf) = getSteepLine view
+          newSteepLine = foldl (nextLine isBelow) (SightLine oxi oyi lx ly) (getShallowBumps view)
 
 -- | Computes the next line when adding a shallow or steep bump.
-nextLine :: (SightLine -> Location -> Bool) -> SightLine -> Location -> SightLine
-nextLine pred line@(SightLine (i,f)) loc = if line `pred` loc
-    then SightLine (loc,f)
+nextLine :: (SightLine -> Int# -> Int# -> Bool) -> SightLine -> ViewBump -> SightLine
+nextLine pred !line@(SightLine xi yi xf yf) !(ViewBump vx vy) = if pred line vx vy
+    then SightLine vx vy xf yf
     else line
 
 {-| A View gets adjusted to be thinner and thinner as it's bumped by shallow
@@ -274,54 +257,57 @@ Those corners can't be used as the sole projection point for a View.
 validView :: View -> Bool
 validView view = not (shallowIsSteep && lineOnExtremity)
     where shallowIsSteep = shallowLine `isLineCollinear` steepLine
-          lineOnExtremity = shallowLine `isCollinear` strictLocation 0 1 || shallowLine `isCollinear` strictLocation 1 0
+          lineOnExtremity = isCollinear shallowLine 0# 1# || isCollinear shallowLine 1# 0#
           shallowLine = getShallowLine view
           steepLine = getSteepLine view
 
 -- | Applies a bump operation, checks, and returns the new view list as a single operation.
-bumpAndCheck :: (View -> Location -> View) -> Int -> Location -> [View] -> [View]
-bumpAndCheck bumpf viewIndex bump activeViews = out
-    where view = activeViews !! viewIndex
-          bumpedView = bumpf view bump
+bumpAndCheck :: (View -> View) -> Int# -> [View] -> [View]
+bumpAndCheck bumpf viewIndex activeViews = out
+    where view = activeViews #! viewIndex
+          bumpedView = bumpf view
           out = if validView bumpedView
             then update viewIndex bumpedView activeViews
             else remove viewIndex activeViews
 
 -- | Adds a single Location to the set of visited locations if it's within
 --   one of the views, and updates any views as necessary.
-visitCoord :: VisionBlocked -> Location -> Quadrant -> Int -> Int -> STRef s (Set Location) -> STRef s [View] -> ST s ()
-visitCoord visionB start quadrant dx dy visitedRef viewsRef = do
-    let topLeft = strictLocation dx (dy+1)
-    let bottomRight = strictLocation (dx+1) dy
-    let realX = dx * getSignX quadrant
-    let realY = dy * getSignY quadrant
-    let trueLocation = strictLocation (getLocX start + realX) (getLocY start + realY)
+visitCoord :: VisionBlocked -> Int# -> Int# -> Int# -> Int# -> Int# -> Int# -> STRef s (Set Location) -> STRef s [View] -> ST s ()
+visitCoord visionB startX startY qx qy dx dy visitedRef viewsRef = do
+    let topLeftX = dx
+        topLeftY = dy +# 1#
+        bottomRightX = dx +# 1#
+        bottomRightY = dy
+        realX = dx *# qx -- only keeps the low word, i guess.
+        realY = dy *# qy
+        trueLocation = strictLocation (I# (startX +# realX)) (I# (startY +# realY))
     activeViews <- readSTRef viewsRef
-    let viewIndex = calcViewIndex activeViews bottomRight
-    unless (viewIndex == (length activeViews) || (getShallowLine (activeViews !! viewIndex)) `isAboveOrCollinear` topLeft) $ do
+    let viewIndex = (calcViewIndex activeViews bottomRightX bottomRightY) :: Int#
+    unless (isTrue# (viewIndex ==# ubLen activeViews) || isAboveOrCollinear (getShallowLine (activeViews #! viewIndex)) topLeftX topLeftY) $ do
         modifySTRef' visitedRef (Set.insert trueLocation) -- Add the location
         when (visionB trueLocation) $ do
-            let currentView = activeViews !! viewIndex -- Vision is blocked, calculate how it affects the view.
-            let shallowAboveBottomRight = (getShallowLine currentView) `isAbove` bottomRight
-            let steepBelowTopLeft = (getSteepLine currentView) `isBelow` topLeft
+            let currentView = activeViews #! viewIndex -- Vision is blocked, calculate how it affects the view.
+                shallowAboveBottomRight = isAbove (getShallowLine currentView) bottomRightX bottomRightY
+                steepBelowTopLeft = isBelow (getSteepLine currentView) topLeftX topLeftY
             case (shallowAboveBottomRight, steepBelowTopLeft) of
                 (True, True) -> modifySTRef' viewsRef $ remove viewIndex
-                (True, False) -> modifySTRef' viewsRef $ bumpAndCheck addShallowBump viewIndex topLeft
-                (False, True) -> modifySTRef' viewsRef $ bumpAndCheck addSteepBump viewIndex bottomRight
+                (True, False) -> modifySTRef' viewsRef $ bumpAndCheck (addShallowBump topLeftX topLeftY) viewIndex 
+                (False, True) -> modifySTRef' viewsRef $ bumpAndCheck (addSteepBump bottomRightX bottomRightY) viewIndex 
                 (False, False) -> do
                     -- clone the current view
                     modifySTRef' viewsRef $ add viewIndex currentView
-                    -- check the shallow
-                    -- we do this first so that if it's removed it won't affect our bump/check of the steep
-                    modifySTRef' viewsRef $ bumpAndCheck addShallowBump (viewIndex+1) topLeft
+                    -- bump both views. This is two steps obviously.
+                    -- we do this first so that if it's removed it won't affect our bump/check of the other bump
+                    modifySTRef' viewsRef $ bumpAndCheck (addShallowBump topLeftX topLeftY) (viewIndex +# 1#) 
                     -- check the steep
-                    modifySTRef' viewsRef $ bumpAndCheck addSteepBump viewIndex bottomRight
+                    modifySTRef' viewsRef $ bumpAndCheck (addSteepBump bottomRightX bottomRightY) viewIndex
 
 -- | Calculates the index within the list that the view appropriate to the
 --   Location specified has. If no view is appropriate to the Location
 --   specified then the number returned is the length of the list.
-calcViewIndex :: [View] -> Location -> Int
-calcViewIndex = go 0
-    where go tmp views bottomRight = if tmp < (length views) && getSteepLine (views!!tmp) `isBelowOrCollinear` bottomRight
-            then go (tmp+1) views bottomRight
+calcViewIndex :: [View] -> Int# -> Int# -> Int#
+calcViewIndex = go 0#
+    where go :: Int# -> [View] -> Int# -> Int# -> Int#
+          go tmp views bottomRightX bottomRightY = if isTrue# (tmp <# ubLen views) && isBelowOrCollinear (getSteepLine (views #! tmp)) bottomRightX bottomRightY
+            then go (tmp +# 1#) views bottomRightX bottomRightY
             else tmp

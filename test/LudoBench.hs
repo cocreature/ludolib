@@ -9,7 +9,7 @@ import Control.DeepSeq
 import Data.Location
 import Data.Set
 import qualified Util.PPFOV as Curr
-import qualified Util.PPFOVNext as Next
+--import qualified Util.PPFOVNext as Next
 
 -- | Orphan, but that's alright.
 instance NFData Location where
@@ -40,6 +40,7 @@ crowdedSet = fromList $ Location <$> [
 crowdedVision = (\loc@(Location (x,y)) ->  x > 50 || y > 50 || (loc `elem` crowdedSet))
 
 main = defaultMain [
+    {-
     bench "Curr, Open, Range 10" $ nf (Curr.computeFOV openVision 10) (Location (0,0)),
     bench "Next, Open, Range 10" $ nf (Next.computeFOV openVision 10) (Location (0,0)),
     bench "Curr, Crowded, Range 10" $ nf (Curr.computeFOV crowdedVision 10) (Location (0,0)),
@@ -48,8 +49,9 @@ main = defaultMain [
     bench "Next, Open, Range 20" $ nf (Next.computeFOV openVision 20) (Location (0,0)),
     bench "Curr, Crowded, Range 20" $ nf (Curr.computeFOV crowdedVision 20) (Location (0,0)),
     bench "Next, Crowded, Range 20" $ nf (Next.computeFOV crowdedVision 20) (Location (0,0)),
+    -}
     bench "Curr, Open, Range 50" $ nf (Curr.computeFOV openVision 50) (Location (0,0)),
-    bench "Next, Open, Range 50" $ nf (Next.computeFOV openVision 50) (Location (0,0)),
+    --bench "Next, Open, Range 50" $ nf (Next.computeFOV openVision 50) (Location (0,0)),
     bench "Curr, Crowded, Range 50" $ nf (Curr.computeFOV crowdedVision 50) (Location (0,0)),
-    bench "Next, Crowded, Range 50" $ nf (Next.computeFOV crowdedVision 50) (Location (0,0))
+    --bench "Next, Crowded, Range 50" $ nf (Next.computeFOV crowdedVision 50) (Location (0,0))
     ]
