@@ -52,6 +52,6 @@ main = defaultMain [
     -}
     bench "Curr, Open, Range 50" $ nf (Curr.computeFOV openVision 50) (Location (0,0)),
     --bench "Next, Open, Range 50" $ nf (Next.computeFOV openVision 50) (Location (0,0)),
-    bench "Curr, Crowded, Range 50" $ nf (Curr.computeFOV crowdedVision 50) (Location (0,0)),
+    bench "Curr, Crowded, Range 50" $ nf (Curr.computeFOV crowdedVision 50) (Location (0,0))
     --bench "Next, Crowded, Range 50" $ nf (Next.computeFOV crowdedVision 50) (Location (0,0))
     ]
