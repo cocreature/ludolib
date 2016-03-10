@@ -2,7 +2,7 @@
 
 {-| Computes the field of view that's visible from a given location. Use
 'computeFOV' and supply a 'VisionBlocked' function, the computation range, and
-the starting 'Location'. You get a (Set Location) back.
+the starting 'Location'. You get a 'Set Location' back.
 
 You can also use 'isLOSBetween' with a VisionBlocked and two Locations to get a
 Bool of if vision is blocked between the locations or not. It will generally be
@@ -31,13 +31,17 @@ import GHC.Exts
 {-| A VisionBlocked is a function that, given a Location, says if that Location
 blocks vision or not. Each such function is naturally specific to a particular
 form of sight, and a given 2D plane. A check for x-ray vision and for normal
-vision would be different, for example.  Should return True when vision is
-blocked, and False when not.
+vision would be different, for example. It should return 'True' when vision is
+blocked, and 'False' when not.
 -}
 type VisionBlocked = Location -> Bool
 
-{-| Given a vision form, a range limit, and a starting Location, returns the Set
-of all Locations that can be seen.
+{-| Given a 'VisionBlocked' predicate, a maximum range, and a starting 'Location',
+returns the set of all locations that you can see from that starting
+location. As one would expect, this has a runtime that takes roughly the square
+of the range of vision, or less if the walls block in the vision. The predicate
+used ends up having a significant impact on the time it takes to do a complete
+FOV pass, so be sure that it can do its job quickly.
 -}
 computeFOV :: VisionBlocked -> Int -> Location -> Set Location
 computeFOV visionB range start = Set.unions $ [
@@ -48,7 +52,7 @@ computeFOV visionB range start = Set.unions $ [
 
 
 {-| Untested, but should be correct. If this is the only thing you want to know,
-then this should end up being faster than a full FOV.
+then this should end up being faster than a full FOV pass (~1/4th the time).
 -}
 isLOSBetween :: VisionBlocked -> Location -> Location -> Bool
 isLOSBetween vision locA locB = 
