@@ -8,16 +8,19 @@ import Control.DeepSeq
 
 import Data.Location
 import Data.Set
-import qualified Util.PPFOV as Curr
+import Control.Monad.State
+import Control.Monad
+import System.Random
+--import qualified Util.PPFOV as Curr
 --import qualified Util.PPFOVNext as Next
+import Data.PCGen as Curr
 
 -- | Orphan, but that's alright.
 instance NFData Location where
     -- rnf :: a -> ()
     rnf l@(Location (x,y)) = x `seq` y `seq` l `seq` ()
 
-range = 500
-
+{-
 openVision = (\(Location (x,y)) -> x > 50 || y > 50)
 
 -- Generated randomly with
@@ -39,7 +42,7 @@ crowdedSet = fromList $ Location <$> [
 
 crowdedVision = (\loc@(Location (x,y)) ->  x > 50 || y > 50 || (loc `elem` crowdedSet))
 
-main = defaultMain [
+fovMain = defaultMain [
     {-
     bench "Curr, Open, Range 10" $ nf (Curr.computeFOV openVision 10) (Location (0,0)),
     bench "Next, Open, Range 10" $ nf (Next.computeFOV openVision 10) (Location (0,0)),
@@ -55,3 +58,12 @@ main = defaultMain [
     bench "Curr, Crowded, Range 50" $ nf (Curr.computeFOV crowdedVision 50) (Location (0,0))
     --bench "Next, Crowded, Range 50" $ nf (Next.computeFOV crowdedVision 50) (Location (0,0))
     ]
+-- -}
+
+pcgenMain = defaultMain [
+    bench "StdGen, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkStdGen 12345),
+    bench "Curr PCGen32, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkPCGen32 5 5),
+    bench "Curr PCGen64, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkPCGen64 5 5 7 7)
+    ]
+
+main = pcgenMain

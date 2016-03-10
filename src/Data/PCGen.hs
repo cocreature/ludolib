@@ -6,35 +6,48 @@ Copyright 2014 to her. I'm not sure how cross-language copyright works, if it
 applies at all, but her work is used under the Apache 2.0 License.
 
 There are several versions provided:
-* 'PCGen32' provides 32 bits of output per
-step by holding 128 bits of internal data, half of which changes each step, and
-the other half of which is fixed during the lifetime of the generator.
+
+* 'PCGen32' provides 32 bits of output by holding on to two Word64 values
+internally. One value is the "state" of the generator, which is different for
+each step of the generator as you call 'next' successive times. The other value
+is an "increment" value, which stays the same across the different generations
+of a particular generator. Each possible increment value produces a different
+ordering of outputs, but an increment value must be odd, so overall there's 2^63
+possible output streams. Each output stream has 2^64 different outputs before it
+loops.
 
 * 'PCGen64' is a version which provides 64 bits of output per step by holding
-two different PCGen32 values, running them both one step, and then combining
-both of the results into a single result.
+two different PCGen32 values, running them both one step for each step that it
+has to make, and then combining the two Word32 values it gets into a single
+Word64 value. The increment values on the two generators used aren't allowed to
+be the same (just because it'd give sorta weird results, not for any concrete
+math reason), but because there's two generators that each have 2^63 possible
+increment values, a PCGen64 has (2^63)^2-(2^63) possible increment
+configurations overall (~8.5*10^37). Each setup still only has 2^64 numbers per
+stream though.
 
 * 'PCGen' is an architecture-specific type alias that always matches the output
 type of the generator to your current machine width, similar to how the 'Int'
 type always matches size with your current machine width.
 
-Use 'mkPCGen', or one of the width-specific variants, to create new PCGen
-values, and then treat it just like any other 'RandomGen' value.
+Use 'mkPCGen', or one of the width-specific variants ('mkPCGen32' and
+'mkPCGen64'), to create new generator values, and then just use the 'RandomGen'
+methods.
+
+In terms of speed, the generators are pretty zippy. On my machine, generating 1
+million values took 90ms for the 'PCGen32', 110ms for the 'PCGen64', and 145ms when
+using the 'StdGen' type from 'System.Random'.
 -}
 module Data.PCGen (
     -- * 32 bits of output
     PCGen32(),
-    _state32,
-    _inc32,
     mkPCGen32,
     
     -- * 64 bits of output
     PCGen64(),
-    _genA,
-    _genB,
     mkPCGen64,
     
-    -- * Machine-sized output
+    -- * Locally sized output
     PCGen,
     mkPCGen
     ) where
@@ -48,22 +61,16 @@ import Data.Int
 -- PCGen32 Section
 -- -- -- -- --
 
-{-| A Permuted Congruential Generator that produces 32-bits of output per
-step. The generator uses 64-bits of state that changes from use to use, as well
-as 64-bits as an incrementation value that *does not* change from use to
-use. The period is 2^64, and 2^63 distinct increment values each produce a
-unique sequence.
-
-The Inc value must ALWAYS be odd, so use mkPCGen32 to ensure that.
+{-| A Permuted Congruential Generator that produces 32-bits of output per step.
 -}
 data PCGen32 = PCGen32 {
-    _state32 :: Word64, -- ^ The internal state of the generator.
-    _inc32 :: Word64 -- ^ controls what number stream the generator moves along.
+    _state32 :: {-# UNPACK #-} !Word64, -- ^ The internal state of the generator.
+    _inc32 :: {-# UNPACK #-} !Word64 -- ^ controls what number stream the generator moves along.
     } deriving (Eq, Ord, Show)
 
-{-| The Inc value on a PCGen32 must always be odd, so use this to make sure that's
-the case. Runs the generator once to advance the seed to a more useful value
-(you usually get 0 otherwise).
+{-| The Inc value on a PCGen32 must always be odd, so this ensures that that is
+always the case. It also runs the generator once to advance the seed to a more
+useful value, otherwise you almost always get 0 as your first result.
 -}
 mkPCGen32 :: Word64 -> Word64 -> PCGen32
 mkPCGen32 state inc = snd $ stepPCGen32 $ PCGen32 state (inc .|. 1)
@@ -121,22 +128,18 @@ instance Random PCGen32 where
 -- PCGen64 Section
 -- -- -- -- --
 
-{-| A Permuted Congruential Generator that produces 64-bits of output per
-step. The generator uses two PCGen32 that are run along side each other during
-each step.
-
-The Inc values must ALWAYS be odd, so use mkPCGen64 to ensure that.
+{-| A Permuted Congruential Generator that produces 64-bits of output per step
 -}
 data PCGen64 = PCGen64 {
-    _genA :: PCGen32, -- ^ One of the two internal generators the PCGen64 uses.
-    _genB :: PCGen32 -- ^ The other of the two internal generators the PCGen64 uses.
+    _genA :: {-# UNPACK #-} !PCGen32, -- ^ One of the two internal generators the PCGen64 uses.
+    _genB :: {-# UNPACK #-} !PCGen32 -- ^ The other of the two internal generators the PCGen64 uses.
     } deriving (Eq, Ord, Show)
 
-{-| The Inc value on a PCGen64 must always be odd, so use this to make sure that's
+{-| The Inc value on a PCGen64 must always be odd, so this ensures that that is
 the case. The generators should also have different increment values from each
-other, which this also checks.  If they would be the same, the second
-generator's inc value is bumped up, so that the generators are always out of
-phase with each other.
+other, which this also checks.  If the values given woule have them be the same,
+the second generator's inc value is bumped up, so that the generators are always
+out of phase with each other.
 -}
 mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
 mkPCGen64 sa ia sb ib = out
@@ -166,8 +169,8 @@ instance RandomGen PCGen64 where
             (a1,a2) = split genA
             (b1,b2) = split genB
 
-{-| Randomly generates PCGen64values. For randomR, the genA of the range denotes
-the range of the new gen's inc value.
+{-| Randomly generates PCGen64 values. For randomR, the genA of the range denotes
+the range of the new gen's inc value, not that it really matters.
 -}
 instance Random PCGen64 where
     random gen = let

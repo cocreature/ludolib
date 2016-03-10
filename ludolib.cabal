@@ -29,7 +29,7 @@ library
                         ConstraintKinds
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
-    ghc-options:        -ddump-to-file -ddump-prep -ddump-simpl -ddump-simpl-iterations
+    --ghc-options:        -ddump-to-file -ddump-prep -ddump-simpl -ddump-simpl-iterations
 
 executable ludobench
     main-is:            LudoBench.hs
@@ -39,7 +39,9 @@ executable ludobench
                         ludolib,
                         criterion,
                         deepseq,
-                        containers
+                        containers,
+                        mtl,
+                        random
     ghc-options:        -O2
                         -- -ddump-to-file -ddump-prep -ddump-simpl -ddump-simpl-iterations
 
