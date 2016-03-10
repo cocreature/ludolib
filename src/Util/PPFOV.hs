@@ -270,8 +270,6 @@ bumpAndCheck bumpf viewIndex activeViews = out
             then update viewIndex bumpedView activeViews
             else remove viewIndex activeViews
 
-type Test = Int#
-
 -- | Adds a single Location to the set of visited locations if it's within
 --   one of the views, and updates any views as necessary.
 visitCoord :: VisionBlocked -> Int# -> Int# -> Int# -> Int# -> Int# -> Int# -> STRef s (Set Location) -> STRef s [View] -> ST s ()
