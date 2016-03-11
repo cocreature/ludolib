@@ -14,6 +14,7 @@ import System.Random
 --import qualified Util.PPFOV as Curr
 --import qualified Util.PPFOVNext as Next
 import Data.PCGen as Curr
+--import Data.PCGenNext as Next
 
 -- | Orphan, but that's alright.
 instance NFData Location where
@@ -60,10 +61,42 @@ fovMain = defaultMain [
     ]
 -- -}
 
+loopNext :: RandomGen s => s -> [Int]
+loopNext = (evalState (replicateM 10000000 (state System.Random.next)))
+
+-- we need this if we want to test split. StdGen is two !Int, so it's okay.
+instance NFData StdGen where
+    -- rnf :: a -> ()
+    rnf gen = gen `seq` ()
+
+-- Holds two Word#
+instance NFData Curr.PCGen32 where
+    -- rnf :: a -> ()
+    rnf gen = gen `seq` ()
+
+-- Holds four Word#
+instance NFData Curr.PCGen64 where
+    -- rnf :: a -> ()
+    rnf gen = gen `seq` ()
+
+{-
+-- Holds two Word#
+instance NFData Next.PCGen32 where
+    -- rnf :: a -> ()
+    rnf gen = gen `seq` ()
+
+-- Holds four Word#
+instance NFData Next.PCGen64 where
+    -- rnf :: a -> ()
+    rnf gen = gen `seq` ()
+-}
+
 pcgenMain = defaultMain [
-    bench "StdGen, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkStdGen 12345),
-    bench "Curr PCGen32, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkPCGen32 5 5),
-    bench "Curr PCGen64, 1 million uses" $ nf (evalState (replicateM 1000000 (state next))) (mkPCGen64 5 5 7 7)
+    bench "StdGen, 10 million uses" $ nf loopNext (mkStdGen 12345),
+    bench "Curr PCGen32, 10 million uses" $ nf loopNext (Curr.mkPCGen32 5 5),
+    bench "Curr PCGen64, 10 million uses" $ nf loopNext (Curr.mkPCGen64 5 5 7 7)
+    --bench "Next PCGen32, 10 million uses" $ nf loopNext (Next.mkPCGen32 5 5),
+    --bench "Next PCGen64, 10 million uses" $ nf loopNext (Next.mkPCGen64 5 5 7 7)
     ]
 
 main = pcgenMain
