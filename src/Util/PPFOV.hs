@@ -25,7 +25,6 @@ import Control.Monad.ST
 import Data.STRef
 
 -- Using unboxed intermediate values cuts the time taken by another 25%
-import GHC.Prim
 import GHC.Exts
 
 {-| A VisionBlocked is a function that, given a Location, says if that Location
