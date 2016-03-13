@@ -66,6 +66,10 @@ import System.Random
 import Data.Bits
 import Data.Word
 import Data.Int
+import Data.List
+import Data.Char
+
+import Debug.Trace
 
 import GHC.Exts
 import GHC.Prim
@@ -158,11 +162,31 @@ instance Ord PCGen32 where
         EQ -> compare (W# stA) (W# stB)
         GT -> GT
 
-{-| The show for a PCGen32 gives the GHCI expression to remake the same PCGen32
-value.
+showReadPrefix32 :: String
+showReadPrefix32 = "PCGen32"
+
+{-| The show and read for PCGen32 will remake the exact same PCGen32.
 -}
 instance Show PCGen32 where
-    show !(PCGen32 st inc) = "mkPCGen32 " ++ show (W# st) ++ " " ++ show (W# inc)
+    show !(PCGen32 st inc) = showReadPrefix32 ++ " " ++ show (W# st) ++ " " ++ show (W# inc)
+
+{-| The show and read for PCGen32 will remake the exact same PCGen32. Ensures that
+the inc value is always odd, but that won't affect you if you only get PCGen32
+strings from uses of the show function.
+-}
+instance Read PCGen32 where
+    -- readsPrec :: Int -> String -> [(a, String)]
+    readsPrec prec str = if (showReadPrefix32 ++ " ") `isPrefixOf` str
+        then let strNoConstructor = drop (length (showReadPrefix32 ++ " ")) str in
+            case readsPrec prec strNoConstructor of
+                [(stateWord,statelessString)] -> case readsPrec prec (drop 1 statelessString) of
+                    [(incWord,wordlessString)] -> let
+                        !(W# st) = stateWord
+                        !(W# inc) = incWord
+                        in [(PCGen32 st (or# inc 1##),wordlessString)]
+                    _ -> []
+                _ -> []
+        else []
 
 -- -- -- -- --
 -- PCGen64 Section (64-bit)
@@ -237,12 +261,42 @@ instance Ord PCGen64 where
                         GT -> GT
                         EQ -> compare (W# stB) (W# stB')
 
-{-| The show for a PCGen32 gives the GHCI expression to remake the same PCGen32
-value.
+showReadPrefix64 :: String
+showReadPrefix64 = "PCGen64"
+
+{-| The show and read for PCGen64 will remake the exact same PCGen64.
 -}
 instance Show PCGen64 where
-    show !(PCGen64 stA incA stB incB) = "mkPCGen64 " ++
-        show (W# stA) ++ " " ++ show (W# incA) ++ " " ++ show (W# stB) ++ " " ++ show (W# incB)
+    show !(PCGen64 stA incA stB incB) =showReadPrefix64 ++
+        " " ++ show (W# stA) ++
+        " " ++ show (W# incA) ++
+        " " ++ show (W# stB) ++
+        " " ++ show (W# incB)
+
+{-| The show and read for PCGen64 will remake the exact same PCGen64. Ensures that
+the inc values are always odd, and that the inc values are out of phase, but
+neither of these thing will affect you if you only get PCGen64 strings from uses
+of the show function.
+-}
+instance Read PCGen64 where
+    -- readsPrec :: Int -> String -> [(a, String)]
+    readsPrec prec str = if (showReadPrefix64 ++ " ") `isPrefixOf` str
+        then let strNoConstructor = drop (length (showReadPrefix64 ++ " ")) str in
+            case readsPrec prec strNoConstructor of
+                [(stateA,noStateA)] -> case readsPrec prec (drop 1 noStateA) of
+                    [(incriA,noIncriA)] -> case readsPrec prec (drop 1 noIncriA) of
+                        [(stateB,noStateB)] -> case readsPrec prec (drop 1 noStateB) of
+                            [(incriB,noIncriB)] -> let
+                                !(W# stA) = stateA
+                                !(W# incA) = if incriA == incriB then incriA + 2 else incriA
+                                !(W# stB) = stateB
+                                !(W# incB) = incriB
+                                in [(PCGen64 stA (or# incA 1##) stB (or# incB 1##),noIncriB)]
+                            _ -> []
+                        _ -> []
+                    _ -> []
+                _ -> []
+        else []
 
 -- -- -- -- --
 -- PCGen Section (64-bit)
@@ -286,12 +340,17 @@ up. Things are still pretty fast, just not as fast.
 -- PCGen32 Section (32-bit)
 -- -- -- -- --
 
-{-| A Permuted Congruential Generator that produces 32-bits of output per step.
+{-| A Permuted Congruential Generator that produces 32-bits of output per
+step. Equal when both internal values are equal. Ordered in some arbitrary way
+that doesn't matter, it's just so you can put it into a set. Read and Show are
+both derived, allowing you to serialize your PCGen32. This derived Read won't
+ensure that the inc value is odd if you give it a string that you made yourself
+instead of a string that came from show.
 -}
 data PCGen32 = PCGen32 {
     _state32 :: {-# UNPACK #-} !Word64, -- ^ The internal state of the generator.
     _inc32 :: {-# UNPACK #-} !Word64 -- ^ controls what number stream the generator moves along.
-    } deriving (Eq, Ord, Show)
+    } deriving (Eq, Ord, Read, Show)
 
 {-| The Inc value on a PCGen32 must always be odd, so this ensures that that is
 always the case. It also runs the generator once to advance the seed to a more
@@ -350,7 +409,7 @@ instance Random PCGen32 where
 data PCGen64 = PCGen64 {
     _genA :: {-# UNPACK #-} !PCGen32, -- ^ One of the two internal generators the PCGen64 uses.
     _genB :: {-# UNPACK #-} !PCGen32 -- ^ The other of the two internal generators the PCGen64 uses.
-    } deriving (Eq, Ord, Show)
+    } deriving (Eq, Ord, Read, Show)
 
 {-| The Inc value on a PCGen64 must always be odd, so this ensures that that is
 the case. The generators should also have different increment values from each
