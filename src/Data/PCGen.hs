@@ -37,8 +37,9 @@ Use 'mkPCGen', or one of the width-specific variants ('mkPCGen32' and
 methods.
 
 In terms of speed, the generators are pretty zippy. On my machine, generating a
-list of 10 million values took 630ms for the 'PCGen32', 650ms for the 'PCGen64',
-compared to 1340ms when using the 'StdGen' type from 'System.Random'.
+list of 10 million values took 647ms for the 'PCGen32', 755ms for the 'PCGen64',
+and 1415ms when using the 'StdGen' type from 'System.Random'. Exact number vary
+from run to run, but you get the general ballpark.
 -}
 module Data.PCGen (
     -- * 32 bits of output
@@ -62,16 +63,30 @@ import Data.Int
 import GHC.Exts
 import GHC.Prim
 
--- -- -- -- --
--- PCGen32 Section
--- -- -- -- --
-
 #ifdef SixtyFourBit
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--    __ _  _     ____  _ _      _____           _                     
+--   / /| || |   |  _ \(_) |    / ____|         | |                    
+--  / /_| || |_  | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___ 
+-- | '_ \__   _| |  _ <| | __|  \___ \| | | / __| __/ _ \ '_ ` _ \/ __|
+-- | (_) | | |   | |_) | | |_   ____) | |_| \__ \ ||  __/ | | | | \__ \
+--  \___/  |_|   |____/|_|\__| |_____/ \__, |___/\__\___|_| |_| |_|___/
+--                                      __/ |                          
+--                                     |___/                           
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 {-
 On 64-bit machines a Word# will have the same width as the Word64 that we want
 to use, so we use Word# and primitive operations for a little bit of a speed
 boost.
 -}
+
+-- -- -- -- --
+-- PCGen32 Section (64-bit)
+-- -- -- -- --
 
 {-| A permuted congruential generator that produces 32 bits of randomness per step.
 -}
@@ -112,14 +127,15 @@ instance RandomGen PCGen32 where
             outA = PCGen32 stateA (or# incA 1##)
             outB = PCGen32 stateB (or# incB 1##)
 
+{-| randomR is the same as random for this type.
+-}
 instance Random PCGen32 where
     random gen = let
         (x,newGen) = random gen
         in (mkPCGen32 x x,newGen)
-    randomR !((PCGen32 stA incA),(PCGen32 stB incB)) gen = let
+    randomR (_,_) gen = let
         (x,newGen) = random gen
-        (inc,_) = randomR ((W# incA),(W# incB)) gen
-        in (mkPCGen32 x (fromIntegral inc),newGen)
+        in (mkPCGen32 x x,newGen)
 
 {-| PCGen32 values are equal when they have equal state incriment values.
 -}
@@ -141,12 +157,127 @@ value.
 instance Show PCGen32 where
     show !(PCGen32 st inc) = "mkPCGen32 " ++ show (W# st) ++ " " ++ show (W# inc)
 
+-- -- -- -- --
+-- PCGen64 Section (64-bit)
+-- -- -- -- --
+
+{-| A Permuted Congruential Generator that produces 64-bits of output per step
+-}
+data PCGen64 = PCGen64 Word# Word# Word# Word#
+
+{-| Assembles a new PCGen64 from the given data. Runs the generator once to put
+the state values into a good spot, otherwise the first result after this is
+called is usually 0 (for state values that humans pick).
+-}
+mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
+mkPCGen64 ain bin cin din = snd $ next $ PCGen64 a (plusWord# b x) c d
+    where
+        x = if isTrue# (eqWord# b d) then 2## else 0##
+        !(PCGen32 a b) = mkPCGen32 ain bin
+        !(PCGen32 c d) = mkPCGen32 cin din
+
+{-| A PCGen64 has an output range across the entire range of 'Int'.
+-}
+instance RandomGen PCGen64 where
+    next !(PCGen64 stA incA stB incB) = (I# (word2Int# w), newGen) where
+        xorShiftedA = uncheckedShiftRL# (xor# (uncheckedShiftRL# stA 18#) stA) 27#
+        xorShiftedB = uncheckedShiftRL# (xor# (uncheckedShiftRL# stB 18#) stB) 27#
+        rotA = uncheckedShiftRL# stA 59#
+        rotB = uncheckedShiftRL# stB 59#
+        wSubA = narrow32Word# (or# (uncheckedShiftRL# xorShiftedA (word2Int# rotA)) (uncheckedShiftL# xorShiftedA (word2Int# (and# (minusWord# 0## rotA) 31##))))
+        wSubB = narrow32Word# (or# (uncheckedShiftRL# xorShiftedB (word2Int# rotB)) (uncheckedShiftL# xorShiftedB (word2Int# (and# (minusWord# 0## rotB) 31##))))
+        w = or# (uncheckedShiftL# wSubA 32#) wSubB
+        newStateA = plusWord# (timesWord# stA 6364136223846793005##) incA
+        newStateB = plusWord# (timesWord# stB 6364136223846793005##) incB
+        newGen = PCGen64 newStateA incA newStateB incB
+    genRange _ = (minBound,maxBound)
+    split !(PCGen64 stA incA stB incB) = (left, right)
+        where -- no statistical foundation for this!
+            left = PCGen64 stateAL incAL stateBL incBL
+            right = PCGen64 stateAR incAR stateBR incBR
+            !((PCGen32 stateAL incAL),(PCGen32 stateAR incAR)) = split (PCGen32 stA incA)
+            !((PCGen32 stateBL incBL),(PCGen32 stateBR incBR)) = split (PCGen32 stB incB)
+
+{-| randomR is the same as random for this type.
+-}
+instance Random PCGen64 where
+    random gen = let
+        (x,newGen) = random gen
+        in (mkPCGen64 x x x x,newGen)
+    randomR (_,_) gen = let
+        (x,newGen) = random gen
+        in (mkPCGen64 x x x x,newGen)
+
+{-| PCGen32 values are equal when they have equal state incriment values.
+-}
+instance Eq PCGen64 where
+    (==) !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') =
+        isTrue# (andI# (andI# (eqWord# stA stA') (eqWord# incA incA'))
+                       (andI# (eqWord# stB stB') (eqWord# incB incB')))
+
+{-| PCGen32 are ordered by incriment, then by state. The order isn't intended to
+be used for anything other than to potentially put PCGen32 values into a 'Set'.
+-}
+instance Ord PCGen64 where
+    compare !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') = case compare (W# incA) (W# incA') of
+        LT -> LT
+        GT -> GT
+        EQ -> case compare (W# incB) (W# incB') of
+                LT -> LT
+                GT -> GT
+                EQ -> case compare (W# stA) (W# stA') of
+                        LT -> LT
+                        GT -> GT
+                        EQ -> compare (W# stB) (W# stB')
+
+{-| The show for a PCGen32 gives the GHCI expression to remake the same PCGen32
+value.
+-}
+instance Show PCGen64 where
+    show !(PCGen64 stA incA stB incB) = "mkPCGen64 " ++
+        show (W# stA) ++ " " ++ show (W# incA) ++ " " ++ show (W# stB) ++ " " ++ show (W# incB)
+
+-- -- -- -- --
+-- PCGen Section (64-bit)
+-- -- -- -- --
+
+{-| PCGen is a type alias for either PCGen32 or PCGen64 so that the output will
+always use the range of the local machine register size.
+
+This haddock was generated on a 64-bit machine, so PCGen is the same as 'PCGen64'
+-}
+type PCGen = PCGen64
+
+{-| Constructs a new PCGen from any Integral value by using the value given as all
+four values to 'mkPCGen64'.
+-}
+mkPCGen :: (Integral i) => i -> PCGen
+mkPCGen i = let a = fromIntegral i in mkPCGen64 a a a a
+
 #else
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--  ____ ___    ____  _ _      _____           _                     
+-- |___ \__ \  |  _ \(_) |    / ____|         | |                    
+--   __) | ) | | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___ 
+--  |__ < / /  |  _ <| | __|  \___ \| | | / __| __/ _ \ '_ ` _ \/ __|
+--  ___) / /_  | |_) | | |_   ____) | |_| \__ \ ||  __/ | | | | \__ \
+-- |____/____| |____/|_|\__| |_____/ \__, |___/\__\___|_| |_| |_|___/
+--                                    __/ |                          
+--                                   |___/                           
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 {-
 On 32-bit machines, I really don't want to deal with the troubles of making two
 Word# values work as a single Word64, so we'll just let our data stay wrapped
 up. Things are still pretty fast, just not as fast.
 -}
+
+-- -- -- -- --
+-- PCGen32 Section (32-bit)
+-- -- -- -- --
 
 {-| A Permuted Congruential Generator that produces 32-bits of output per step.
 -}
@@ -193,96 +324,19 @@ instance RandomGen PCGen32 where
             outA = mkPCGen32 stateA incA
             outB = mkPCGen32 stateB incB
 
-{-| Randomly generates PCGen32 values. For randomR, the range denotes the range of
-the new gen's inc value.
+{-| randomR is the same as random for this type.
 -}
 instance Random PCGen32 where
     random gen = let
         (x,newGen) = random gen
         in (mkPCGen32 x x,newGen)
-    randomR (low,high) gen = let
+    randomR (_,_) gen = let
         (x,newGen) = random gen
-        (inc,_) = randomR (_inc32 low,_inc32 high) gen
-        in (mkPCGen32 x inc,newGen)
-
-#endif
+        in (mkPCGen32 x x,newGen)
 
 -- -- -- -- --
--- PCGen64 Section
+-- PCGen64 Section (32-bit)
 -- -- -- -- --
-
-#ifdef SixtyFourBit
-{-
-As with 
--}
-
-{-| A Permuted Congruential Generator that produces 64-bits of output per step
--}
-data PCGen64 = PCGen64 Word# Word# Word# Word#
-
-{-| Assembles a new PCGen64 from the given data. Runs the generator once to put
-the state values into a good spot, otherwise the first result after this is
-called is usually 0 (for state values that humans pick).
--}
-mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
-mkPCGen64 ain bin cin din = snd $ next $ PCGen64 a (plusWord# b x) c d
-    where
-        x = if isTrue# (eqWord# b d) then 2## else 0##
-        !(PCGen32 a b) = mkPCGen32 ain bin
-        !(PCGen32 c d) = mkPCGen32 cin din
-
-{-| A PCGen64 has an output range across the entire range of 'Int'.
--}
-instance RandomGen PCGen64 where
-    next !(PCGen64 stA incA stB incB) = (I# (word2Int# w), newGen) where
-        xorShiftedA = uncheckedShiftRL# (xor# (uncheckedShiftRL# stA 18#) stA) 27#
-        xorShiftedB = uncheckedShiftRL# (xor# (uncheckedShiftRL# stB 18#) stB) 27#
-        rotA = uncheckedShiftRL# stA 59#
-        rotB = uncheckedShiftRL# stB 59#
-        wSubA = narrow32Word# (or# (uncheckedShiftRL# xorShiftedA (word2Int# rotA)) (uncheckedShiftL# xorShiftedA (word2Int# (and# (minusWord# 0## rotA) 31##))))
-        wSubB = narrow32Word# (or# (uncheckedShiftRL# xorShiftedB (word2Int# rotB)) (uncheckedShiftL# xorShiftedB (word2Int# (and# (minusWord# 0## rotB) 31##))))
-        w = or# (uncheckedShiftL# wSubA 32#) wSubB
-        newStateA = plusWord# (timesWord# stA 6364136223846793005##) incA
-        newStateB = plusWord# (timesWord# stB 6364136223846793005##) incB
-        newGen = PCGen64 newStateA incA newStateB incB
-    genRange _ = (minBound,maxBound)
-    split !(PCGen64 stA incA stB incB) = (left, right)
-        where -- no statistical foundation for this!
-            left = PCGen64 stateAL incAL stateBL incBL
-            right = PCGen64 stateAR incAR stateBR incBR
-            !((PCGen32 stateAL incAL),(PCGen32 stateAR incAR)) = split (PCGen32 stA incA)
-            !((PCGen32 stateBL incBL),(PCGen32 stateBR incBR)) = split (PCGen32 stB incB)
-
-{-| PCGen32 values are equal when they have equal state incriment values.
--}
-instance Eq PCGen64 where
-    (==) !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') =
-        isTrue# (andI# (andI# (eqWord# stA stA') (eqWord# incA incA'))
-                       (andI# (eqWord# stB stB') (eqWord# incB incB')))
-
-{-| PCGen32 are ordered by incriment, then by state. The order isn't intended to
-be used for anything other than to potentially put PCGen32 values into a 'Set'.
--}
-instance Ord PCGen64 where
-    compare !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') = case compare (W# incA) (W# incA') of
-        LT -> LT
-        GT -> GT
-        EQ -> case compare (W# incB) (W# incB') of
-                LT -> LT
-                GT -> GT
-                EQ -> case compare (W# stA) (W# stA') of
-                        LT -> LT
-                        GT -> GT
-                        EQ -> compare (W# stB) (W# stB')
-
-{-| The show for a PCGen32 gives the GHCI expression to remake the same PCGen32
-value.
--}
-instance Show PCGen64 where
-    show !(PCGen64 stA incA stB incB) = "mkPCGen64 " ++
-        show (W# stA) ++ " " ++ show (W# incA) ++ " " ++ show (W# stB) ++ " " ++ show (W# incB)
-
-#else
 
 {-| A Permuted Congruential Generator that produces 64-bits of output per step
 -}
@@ -325,40 +379,19 @@ instance RandomGen PCGen64 where
             (a1,a2) = split genA
             (b1,b2) = split genB
 
-{-| Randomly generates PCGen64 values. For randomR, the genA of the range denotes
-the range of the new gen's inc value, not that it really matters.
+{-| randomR is the same as random for this type.
 -}
 instance Random PCGen64 where
     random gen = let
         (x,newGen) = random gen
         in (mkPCGen64 x x x x,newGen)
-    randomR (low,high) gen = let
+    randomR (_,_) gen = let
         (x,newGen) = random gen
-        (inc,_) = randomR ((_inc32._genA) low,(_inc32._genA) high) gen
-        in (mkPCGen64 x inc x inc,newGen)
-
-#endif
+        in (mkPCGen64 x x x x,newGen)
 
 -- -- -- -- --
--- Section to make a "PCGen" type that always matches the local bit-width
+-- PCGen Section (32-bit)
 -- -- -- -- --
-
-#ifdef SixtyFourBit
-
-{-| PCGen is a type alias for either PCGen32 or PCGen64 so that the output will
-always use the range of the local machine register size.
-
-This haddock was generated on a 64-bit machine, so PCGen is the same as 'PCGen64'
--}
-type PCGen = PCGen64
-
-{-| Constructs a new PCGen from any Integral value by using the value given as all
-four values to 'mkPCGen64'.
--}
-mkPCGen :: (Integral i) => i -> PCGen
-mkPCGen i = let a = fromIntegral i in mkPCGen64 a a a a
-
-#else
 
 {-| PCGen is a type alias for either PCGen32 or PCGen64 so that the output will
 always use the range of the local machine register size.
@@ -374,6 +407,3 @@ mkPCGen :: (Integral i) => i -> PCGen
 mkPCGen i = let a = fromIntegral i in mkPCGen32 a a
 
 #endif
-
-
-
