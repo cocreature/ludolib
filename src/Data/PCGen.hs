@@ -63,32 +63,34 @@ import GHC.Exts
 import GHC.Prim
 
 -- -- -- -- --
--- Utility
--- -- -- -- --
-
--- -- -- -- --
 -- PCGen32 Section
 -- -- -- -- --
 
 #ifdef SixtyFourBit
+{-
+On 64-bit machines a Word# will have the same width as the Word64 that we want
+to use, so we use Word# and primitive operations for a little bit of a speed
+boost.
+-}
 
+{-| A permuted congruential generator that produces 32 bits of randomness per step.
+-}
 data PCGen32 = PCGen32 Word# Word#
 
+{-| Given two Word64 values, constructs a PCGen32 and runs the generator once,
+giving you back the resulting generator. The generator is run once automatically
+because most initial state values that a human picks end up giving 0 as the
+first result, which is pretty un-random overall.
+-}
 mkPCGen32 :: Word64 -> Word64 -> PCGen32
 mkPCGen32 state64 inc64 = let
     !(W# st) = fromIntegral state64
     !(W# inc) = fromIntegral inc64
-    in snd $ stepPCGen32 $ PCGen32 st (or# inc 1##)
+    in snd $ next $ PCGen32 st (or# inc 1##)
 
-stepPCGen32 :: PCGen32 -> (Word32, PCGen32)
-stepPCGen32 !(PCGen32 st inc) = (fromIntegral (W# (narrow32Word# w)), newGen)
-    where
-        xorShifted = uncheckedShiftRL# (xor# (uncheckedShiftRL# st 18#) st) 27#
-        rot = uncheckedShiftRL# st 59#
-        w = or# (uncheckedShiftRL# xorShifted (word2Int# rot)) (uncheckedShiftL# xorShifted (word2Int# (and# (minusWord# 0## rot) 31##)))
-        newState = plusWord# (timesWord# st 6364136223846793005##) inc
-        newGen = PCGen32 newState inc
-
+{-| The genRange of a PCGen32on a 64 bit system is 0 through 4,294,967,295 (aka
+0xFFFFFFFF, all lower 32 bits active).
+-}
 instance RandomGen PCGen32 where
     next !(PCGen32 st inc) = (I# (word2Int# (narrow32Word# w)),newGen) where
         xorShifted = uncheckedShiftRL# (xor# (uncheckedShiftRL# st 18#) st) 27#
@@ -96,17 +98,17 @@ instance RandomGen PCGen32 where
         w = or# (uncheckedShiftRL# xorShifted (word2Int# rot)) (uncheckedShiftL# xorShifted (word2Int# (and# (minusWord# 0## rot) 31##)))
         newState = plusWord# (timesWord# st 6364136223846793005##) inc
         newGen = PCGen32 newState inc
-    genRange _ = (fromIntegral (minBound :: Int32),fromIntegral (maxBound :: Int32))
+    genRange _ = (I# 0#,I# 0xFFFFFFFF#)
     split !gen@(PCGen32 st inc) = (outA, outB)
         where -- no statistical foundation for this!
-            (q,nGen1) = stepPCGen32 gen
-            (w,nGen2) = stepPCGen32 nGen1
-            (e,nGen3) = stepPCGen32 nGen2
-            !(r,(PCGen32 stFour incFour)) = stepPCGen32 nGen3
+            !((I# q),nGen1) = next gen
+            !((I# w),nGen2) = next nGen1
+            !((I# e),nGen3) = next nGen2
+            !((I# r),(PCGen32 stFour incFour)) = next nGen3
             !(W# stateA) = (W# stFour) `rotateR` 5
             !(W# stateB) = (W# stFour) `rotateR` 3
-            !(W# incA) = fromIntegral $ ((fromIntegral q) `shiftL` 32) .|. ((fromIntegral w)::Word)
-            !(W# incB) = fromIntegral $ ((fromIntegral e) `shiftL` 32) .|. ((fromIntegral r)::Word)
+            incA = or# (uncheckedShiftL# (int2Word# q) 32#) (int2Word# w)
+            incB = or# (uncheckedShiftL# (int2Word# e) 32#) (int2Word# r)
             outA = PCGen32 stateA (or# incA 1##)
             outB = PCGen32 stateB (or# incB 1##)
 
@@ -140,6 +142,11 @@ instance Show PCGen32 where
     show !(PCGen32 st inc) = "mkPCGen32 " ++ show (W# st) ++ " " ++ show (W# inc)
 
 #else
+{-
+On 32-bit machines, I really don't want to deal with the troubles of making two
+Word# values work as a single Word64, so we'll just let our data stay wrapped
+up. Things are still pretty fast, just not as fast.
+-}
 
 {-| A Permuted Congruential Generator that produces 32-bits of output per step.
 -}
@@ -205,30 +212,27 @@ instance Random PCGen32 where
 -- -- -- -- --
 
 #ifdef SixtyFourBit
+{-
+As with 
+-}
 
+{-| A Permuted Congruential Generator that produces 64-bits of output per step
+-}
 data PCGen64 = PCGen64 Word# Word# Word# Word#
 
+{-| Assembles a new PCGen64 from the given data. Runs the generator once to put
+the state values into a good spot, otherwise the first result after this is
+called is usually 0 (for state values that humans pick).
+-}
 mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
-mkPCGen64 ain bin cin din = snd $ stepPCGen64 $ PCGen64 a (plusWord# b x) c d
+mkPCGen64 ain bin cin din = snd $ next $ PCGen64 a (plusWord# b x) c d
     where
         x = if isTrue# (eqWord# b d) then 2## else 0##
         !(PCGen32 a b) = mkPCGen32 ain bin
         !(PCGen32 c d) = mkPCGen32 cin din
 
-stepPCGen64 :: PCGen64 -> (Word64, PCGen64)
-stepPCGen64 !(PCGen64 stA incA stB incB) = ((fromIntegral (W# w)),newGen)
-    where
-        xorShiftedA = uncheckedShiftRL# (xor# (uncheckedShiftRL# stA 18#) stA) 27#
-        xorShiftedB = uncheckedShiftRL# (xor# (uncheckedShiftRL# stB 18#) stB) 27#
-        rotA = uncheckedShiftRL# stA 59#
-        rotB = uncheckedShiftRL# stB 59#
-        wSubA = narrow32Word# (or# (uncheckedShiftRL# xorShiftedA (word2Int# rotA)) (uncheckedShiftL# xorShiftedA (word2Int# (and# (minusWord# 0## rotA) 31##))))
-        wSubB = narrow32Word# (or# (uncheckedShiftRL# xorShiftedB (word2Int# rotB)) (uncheckedShiftL# xorShiftedB (word2Int# (and# (minusWord# 0## rotB) 31##))))
-        w = and# (uncheckedShiftL# wSubA 32#) wSubB
-        newStateA = plusWord# (timesWord# stA 6364136223846793005##) incA
-        newStateB = plusWord# (timesWord# stB 6364136223846793005##) incB
-        newGen = PCGen64 newStateA incA newStateB incB
-
+{-| A PCGen64 has an output range across the entire range of 'Int'.
+-}
 instance RandomGen PCGen64 where
     next !(PCGen64 stA incA stB incB) = (I# (word2Int# w), newGen) where
         xorShiftedA = uncheckedShiftRL# (xor# (uncheckedShiftRL# stA 18#) stA) 27#
@@ -237,17 +241,46 @@ instance RandomGen PCGen64 where
         rotB = uncheckedShiftRL# stB 59#
         wSubA = narrow32Word# (or# (uncheckedShiftRL# xorShiftedA (word2Int# rotA)) (uncheckedShiftL# xorShiftedA (word2Int# (and# (minusWord# 0## rotA) 31##))))
         wSubB = narrow32Word# (or# (uncheckedShiftRL# xorShiftedB (word2Int# rotB)) (uncheckedShiftL# xorShiftedB (word2Int# (and# (minusWord# 0## rotB) 31##))))
-        w = and# (uncheckedShiftL# wSubA 32#) wSubB
+        w = or# (uncheckedShiftL# wSubA 32#) wSubB
         newStateA = plusWord# (timesWord# stA 6364136223846793005##) incA
         newStateB = plusWord# (timesWord# stB 6364136223846793005##) incB
         newGen = PCGen64 newStateA incA newStateB incB
-    genRange _ = (fromIntegral (minBound :: Int),fromIntegral (maxBound :: Int))
+    genRange _ = (minBound,maxBound)
     split !(PCGen64 stA incA stB incB) = (left, right)
         where -- no statistical foundation for this!
             left = PCGen64 stateAL incAL stateBL incBL
             right = PCGen64 stateAR incAR stateBR incBR
             !((PCGen32 stateAL incAL),(PCGen32 stateAR incAR)) = split (PCGen32 stA incA)
             !((PCGen32 stateBL incBL),(PCGen32 stateBR incBR)) = split (PCGen32 stB incB)
+
+{-| PCGen32 values are equal when they have equal state incriment values.
+-}
+instance Eq PCGen64 where
+    (==) !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') =
+        isTrue# (andI# (andI# (eqWord# stA stA') (eqWord# incA incA'))
+                       (andI# (eqWord# stB stB') (eqWord# incB incB')))
+
+{-| PCGen32 are ordered by incriment, then by state. The order isn't intended to
+be used for anything other than to potentially put PCGen32 values into a 'Set'.
+-}
+instance Ord PCGen64 where
+    compare !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') = case compare (W# incA) (W# incA') of
+        LT -> LT
+        GT -> GT
+        EQ -> case compare (W# incB) (W# incB') of
+                LT -> LT
+                GT -> GT
+                EQ -> case compare (W# stA) (W# stA') of
+                        LT -> LT
+                        GT -> GT
+                        EQ -> compare (W# stB) (W# stB')
+
+{-| The show for a PCGen32 gives the GHCI expression to remake the same PCGen32
+value.
+-}
+instance Show PCGen64 where
+    show !(PCGen64 stA incA stB incB) = "mkPCGen64 " ++
+        show (W# stA) ++ " " ++ show (W# incA) ++ " " ++ show (W# stB) ++ " " ++ show (W# incB)
 
 #else
 
@@ -341,3 +374,6 @@ mkPCGen :: (Integral i) => i -> PCGen
 mkPCGen i = let a = fromIntegral i in mkPCGen32 a a
 
 #endif
+
+
+
