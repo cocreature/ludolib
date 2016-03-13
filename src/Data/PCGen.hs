@@ -32,14 +32,21 @@ type always matches size with your current machine width. It's possible to use a
 PCGen64 on a 32-bit device, but your output gets truncated simply by your local
 Int size, so it's a waste of your time.
 
-Use 'mkPCGen', or one of the width-specific variants ('mkPCGen32' and
-'mkPCGen64'), to create new generator values, and then just use the 'RandomGen'
-methods.
+In terms of speed, the generators are pretty zippy when you're on a 64-bit
+machine. On my own computer, generating a list of 10 million values via
+(evalState (replicateM 10000000 (state System.Random.next))) took 647ms for the
+'PCGen32', 755ms for the 'PCGen64', and 1415ms when using the 'StdGen' type from
+'System.Random'. Exact numbers vary from run to run of course, but you get the
+general ballpark.
 
-In terms of speed, the generators are pretty zippy. On my machine, generating a
-list of 10 million values took 647ms for the 'PCGen32', 755ms for the 'PCGen64',
-and 1415ms when using the 'StdGen' type from 'System.Random'. Exact number vary
-from run to run, but you get the general ballpark.
+However, on a 32-bit machine the opposite is true: Because the internal datatype
+is Word64, and that has to be emulated on a 32-bit machine, the operations end
+up being significantly slower. Using an older P4 to test it was 5351ms for
+'PCGen32', 9943ms for 'PCGen64', and only 3909ms for 'StdGen'.
+
+If you want to always use the fastest generator available, you should use a CPP
+macro where you first initialize the generator for your program and pick either
+PCGen32 or StdGen, depending on your system.
 -}
 module Data.PCGen (
     -- * 32 bits of output
