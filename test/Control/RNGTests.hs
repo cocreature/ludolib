@@ -5,6 +5,7 @@ are limited to prevent overflows, and also to keep the test from taking too long
 long to perform).
 -}
 module Control.RNGTests (
+    doRand,
     rngTests
     ) where
 
