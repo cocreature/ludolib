@@ -15,7 +15,7 @@ module Util.PPFOV (
     ) where
 
 import Data.Set (Set)
-import qualified Data.Set as Set
+import qualified Data.Set as S
 import Data.Location
 
 -- Using ST reduces the time taken by 40%
@@ -42,12 +42,11 @@ used ends up having a significant impact on the time it takes to do a complete
 FOV pass, so be sure that it can do its job quickly.
 -}
 computeFOV :: VisionBlocked -> Int -> Location -> Set Location
-computeFOV visionB range start = Set.unions $ [
+computeFOV visionB range start = S.unions $ [
     checkQuadrant visionB range start 1# 1#,
     checkQuadrant visionB range start 1# (-1#),
     checkQuadrant visionB range start (-1#) 1#,
     checkQuadrant visionB range start (-1#) (-1#)]
-
 
 {-| Untested, but should be correct. If this is the only thing you want to know,
 then this should end up being faster than a full FOV pass (~1/4th the time).
@@ -57,12 +56,14 @@ isLOSBetween vision locA locB =
     let !(I# qx) = getLocX locA - getLocX locB
         !(I# qy) = getLocY locA - getLocY locB
         manhattanDist = max (abs $ getLocX locA - getLocX locB) (abs $ getLocY locA - getLocY locA)
-    in Set.member locB (checkQuadrant vision manhattanDist locA qx qy)
+    in locB `S.member` (checkQuadrant vision manhattanDist locA qx qy)
 
 -- -- --
 -- Here begins the module-internal functions.
 -- -- --
 
+-- | Used for add, update, and remove.
+indexError :: a
 indexError = error "Index error."
 
 -- | Given an index, new value, and list, returns a list that
@@ -88,7 +89,7 @@ update i new list
     | otherwise = indexError
 
 -- | Remove the index specified from the list. If the index given
---   is greater than the length of the list there's no error.
+--   is greater than the length of the list there's an error.
 remove :: Int# -> [a] -> [a]
 remove i list
     | isTrue# (i ># 0#) = case list of
@@ -130,13 +131,9 @@ getXFinal (SightLine xi yi xf yf) = xf
 getYFinal :: SightLine -> Int#
 getYFinal (SightLine xi yi xf yf) = yf
 
--- | Makes a new SightLine given an xInitial, yInitial, xFinal, and yFinal
-mkSightLine :: Int# -> Int# -> Int# -> Int# -> SightLine
-mkSightLine xi yi xf yf = SightLine xi yi xf yf
-
 -- | The relative slope between a SightLine and a Location
 relativeSlope :: SightLine -> Int# -> Int# -> Int#
-relativeSlope (SightLine xi yi xf yf) lx ly = ((yf -# yi) *# (xf -# lx)) -# ((xf -# xi) *# (yf -# lx))
+relativeSlope (SightLine xi yi xf yf) lx ly = ((yf -# yi) *# (xf -# lx)) -# ((xf -# xi) *# (yf -# ly))
 
 -- | If the SightLine is entirely above the Location or not.
 isAbove :: SightLine -> Int# -> Int# -> Bool
@@ -150,13 +147,13 @@ isAboveOrCollinear line lx ly = isTrue# (relativeSlope line lx ly <=# 0#)
 isBelow :: SightLine -> Int# -> Int# -> Bool
 isBelow line lx ly = isTrue# (relativeSlope line lx ly ># 0#)
 
--- | If the SightLine is below or touching the Locaiton, or not.
-isBelowOrCollinear :: SightLine -> Int# -> Int# -> Bool
-isBelowOrCollinear line lx ly = isTrue# (relativeSlope line lx ly >=# 0#)
-
 -- | If the SightLine is touching the Location or not.
 isCollinear :: SightLine -> Int# -> Int# -> Bool
 isCollinear line lx ly = isTrue# (relativeSlope line lx ly ==# 0#)
+
+-- | If the SightLine is below or touching the Locaiton, or not.
+isBelowOrCollinear :: SightLine -> Int# -> Int# -> Bool
+isBelowOrCollinear line lx ly = isTrue# (relativeSlope line lx ly >=# 0#)
 
 -- | If two lines are exactly aligned or not.
 isLineCollinear :: SightLine -> SightLine -> Bool
@@ -181,6 +178,7 @@ mkView shallowLine steepLine = View {
     getSteepBumps=[],
     getSteepLine=steepLine}
 
+-- | Boxes up two unboxed Int# values into a Location.
 boxLocation :: Int# -> Int# -> Location
 boxLocation x y = strictLocation (I# x) (I# y)
 
@@ -189,15 +187,15 @@ boxLocation x y = strictLocation (I# x) (I# y)
 checkQuadrant :: VisionBlocked -> Int -> Location -> Int# -> Int# -> Set Location
 checkQuadrant visionB range start qx qy = let
     !(I# ubRange)    = range
-    shallowLineStart = mkSightLine 0# 1# ubRange 0#
-    steepLineStart   = mkSightLine 1# 0# 0# ubRange
+    shallowLineStart = SightLine 0# 1# ubRange 0#
+    steepLineStart   = SightLine 1# 0# 0# ubRange
     startViewList    = [mkView shallowLineStart steepLineStart]
     coordsToCheck    = coordsFromRange range
     !(I# startX)     = getLocX start
     !(I# startY)     = getLocY start
     in runST $ do
         viewsRef <- newSTRef startViewList
-        visitedRef <- newSTRef (Set.singleton start)
+        visitedRef <- newSTRef (S.singleton start)
         checkSub visionB startX startY qx qy coordsToCheck visitedRef viewsRef
         readSTRef visitedRef
 
@@ -206,7 +204,8 @@ return the set of visited coordinates so far. Otherwise we use visitCoord to
 compute the next pass, giving us a new set of visited coordinates and a new list
 of active views.
 
-This [Location] based recursion is faster than a self-written Int# based for loop.
+This [Location] based recursion compiles to something that's faster than a
+self-written Int# based for loop. Thanks GHC.
 -}
 checkSub :: VisionBlocked -> Int# -> Int# -> Int# -> Int# -> [Location] -> STRef s (Set Location) -> STRef s [View] -> ST s ()
 checkSub visionB startX startY qx qy [] visitedRef viewsRef = return ()
@@ -286,7 +285,7 @@ visitCoord visionB startX startY qx qy dx dy visitedRef viewsRef = do
     activeViews <- readSTRef viewsRef
     let viewIndex = (calcViewIndex activeViews bottomRightX bottomRightY) :: Int#
     unless (isTrue# (viewIndex ==# ubLen activeViews) || isAboveOrCollinear (getShallowLine (activeViews #! viewIndex)) topLeftX topLeftY) $ do
-        modifySTRef' visitedRef (Set.insert trueLocation) -- Add the location
+        modifySTRef' visitedRef (S.insert trueLocation) -- Add the location
         when (visionB trueLocation) $ do
             let currentView = activeViews #! viewIndex -- Vision is blocked, calculate how it affects the view.
                 shallowAboveBottomRight = isAbove (getShallowLine currentView) bottomRightX bottomRightY
@@ -310,6 +309,7 @@ visitCoord visionB startX startY qx qy dx dy visitedRef viewsRef = do
 calcViewIndex :: [View] -> Int# -> Int# -> Int#
 calcViewIndex = go 0#
     where go :: Int# -> [View] -> Int# -> Int# -> Int#
-          go tmp views bottomRightX bottomRightY = if isTrue# (tmp <# ubLen views) && isBelowOrCollinear (getSteepLine (views #! tmp)) bottomRightX bottomRightY
-            then go (tmp +# 1#) views bottomRightX bottomRightY
-            else tmp
+          go tmp views bottomRightX bottomRightY =
+            if isTrue# (tmp <# ubLen views) && isBelowOrCollinear (getSteepLine (views #! tmp)) bottomRightX bottomRightY
+                then go (tmp +# 1#) views bottomRightX bottomRightY
+                else tmp
