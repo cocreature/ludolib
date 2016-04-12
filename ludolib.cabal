@@ -53,12 +53,16 @@ test-suite alltests
     hs-source-dirs:     test
     main-is:            Tests.hs
     other-modules:      Data.PCGenTests
+                        Control.RNGTests
+                        Util.PPFOVTests
     build-depends:      hspec,
                         QuickCheck,
                         ludolib,
                         base,
                         random,
-                        MonadRandom
+                        MonadRandom,
+                        containers,
+                        mtl
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
 
