@@ -5,9 +5,8 @@
 the starting 'Location'. You get a 'Set Location' back.
 
 You can also use 'isLOSBetween' with a VisionBlocked and two Locations to get a
-Bool of if vision is blocked between the locations or not. It will generally be
-a cheaper computation than doing a full FOV calc, if you care about that sort of
-micro-optimization.
+Bool of if vision is blocked between the locations or not. It will take about
+1/4th the time of a full FOV calc, since it only has to check one quadrant.
 -}
 module Util.PPFOV (
     VisionBlocked,
