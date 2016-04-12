@@ -47,7 +47,7 @@ executable ludobench
     ghc-options:        -O2
                         -- -ddump-to-file -ddump-prep -ddump-simpl -ddump-simpl-iterations
 
-test-suite tests
+test-suite alltests
     default-language:   Haskell2010
     type:               exitcode-stdio-1.0
     hs-source-dirs:     test
@@ -61,3 +61,4 @@ test-suite tests
                         MonadRandom
     if arch(x86_64)
         cpp-options: -DSixtyFourBit
+
