@@ -1,6 +1,11 @@
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
+{-| This tests the Data.PCGen module. Because Data.PCGen uses conditional
+compilation to have different versions if you're on 32-bit or 64-bit, then this
+module must also run slightly different tests on 32 and 64 bit versions. The
+actual properties tested are the same either way though.
+-}
 module Data.PCGenTests (
     pcGen32Tests,
     pcGen64Tests
