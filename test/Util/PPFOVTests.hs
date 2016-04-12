@@ -16,7 +16,7 @@ import Control.Monad.Random
 import Control.Monad.State
 
 import Data.Location
-import Util.PPFOV
+import Util.PPFOVNext
 import Data.PCGen
 
 -- -- -- -- --

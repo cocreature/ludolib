@@ -7,11 +7,12 @@ import Criterion.Main
 import Control.DeepSeq
 
 import Data.Location
-import Data.Set
+import Data.Set (Set)
+import qualified Data.Set as S
 import Control.Monad.State
 import Control.Monad
 import System.Random
---import qualified Util.PPFOV as Curr
+import qualified Util.PPFOV as Curr
 --import qualified Util.PPFOVNext as Next
 import Data.PCGen as Curr
 --import Data.PCGenNext as Next
@@ -21,14 +22,14 @@ instance NFData Location where
     -- rnf :: a -> ()
     rnf l@(Location (x,y)) = x `seq` y `seq` l `seq` ()
 
-{-
+-- {-
 openVision = (\(Location (x,y)) -> x > 50 || y > 50)
 
 -- Generated randomly with
 -- replicateM 100 $ (,) <$> randomRIO (-50,50) <*> randomRIO (-50,50)
 -- And then I bumped up any location with both x and y less than 10 by a bit.
 crowdedSet :: Set Location
-crowdedSet = fromList $ Location <$> [
+crowdedSet = S.fromList $ Location <$> [
     (-16,-24),(-14,26),(-14,26),(18,26),(41,-5),(11,-11),(-45,-1),(-15,2),(20,-26),(-46,-1),
     (49,-41),(-22,-36),(-16,-11),(27,-9),(18,11),(-37,-44),(-21,-35),(34,-3),(-5,-37),(-39,16),
     (37,-35),(16,-28),(-31,37),(-40,-1),(28,-31),(23,35),(-21,-43),(2,-12),(23,40),(-10,22),
@@ -55,8 +56,8 @@ fovMain = defaultMain [
     bench "Next, Crowded, Range 20" $ nf (Next.computeFOV crowdedVision 20) (Location (0,0)),
     -}
     bench "Curr, Open, Range 50" $ nf (Curr.computeFOV openVision 50) (Location (0,0)),
-    --bench "Next, Open, Range 50" $ nf (Next.computeFOV openVision 50) (Location (0,0)),
     bench "Curr, Crowded, Range 50" $ nf (Curr.computeFOV crowdedVision 50) (Location (0,0))
+    --bench "Next, Open, Range 50" $ nf (Next.computeFOV openVision 50) (Location (0,0)),
     --bench "Next, Crowded, Range 50" $ nf (Next.computeFOV crowdedVision 50) (Location (0,0))
     ]
 -- -}
@@ -99,4 +100,4 @@ pcgenMain = defaultMain [
     --bench "Next PCGen64, 10 million uses" $ nf loopNext (Next.mkPCGen64 5 5 7 7)
     ]
 
-main = pcgenMain
+main = fovMain

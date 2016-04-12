@@ -20,6 +20,7 @@ library
                         Control.RNG
                         Control.Loops
                         Util.PPFOV
+                        --Util.PPFOVNext
     build-depends:      base,
                         random,
                         MonadRandom,
