@@ -1,3 +1,4 @@
 :set prompt "LudoLib> "
 :set -XOverloadedStrings
+:set -XMagicHash
 :set +s
