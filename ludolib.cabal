@@ -1,6 +1,6 @@
 
 name:               ludolib
-version:            0.0.4
+version:            0.0.5
 synopsis:           A library of game utilities.
 homepage:           https://github.com/Lokathor/ludolib
 license:            AGPL
@@ -20,12 +20,16 @@ library
                         Control.RNG
                         Control.Loops
                         Util.PPFOV
+                        Util.AutomataGen
                         --Util.PPFOVNext
     build-depends:      base,
                         random,
                         MonadRandom,
                         containers,
-                        ghc-prim
+                        ghc-prim,
+                        vector,
+                        primitive,
+                        transformers
     other-extensions:   CPP,
                         ConstraintKinds,
                         MagicHash,
