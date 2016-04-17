@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP, MagicHash, BangPatterns #-}
 
-{-| This contains a random number generateor based upon the C and C++ versions of
-the concept written by M.E. O'Neill of <pcg-random.org>. Her versions are
+{-| This contains a random number generateor based upon the C and C++ versions
+of the concept written by M.E. O'Neill of <pcg-random.org>. Her versions are
 Copyright 2014 to her. I'm not sure how cross-language copyright works, if it
 applies at all, but her work is used under the Apache 2.0 License.
 
@@ -9,44 +9,44 @@ There are several versions provided:
 
 * 'PCGen32' provides 32 bits of output by holding on to two Word64 values
 internally. One value is the "state" of the generator, which is different for
-each step of the generator as you call 'next' successive times. The other value
-is an "increment" value, which stays the same across the different generations
-of a particular generator. Each possible increment value produces a different
-ordering of outputs, but an increment value must be odd, so overall there's 2^63
-possible output streams. Each output stream has 2^64 different outputs before it
-loops.
+each step of the generator as you call 'next' successive times. The other
+value is an "increment" value, which stays the same across the different
+generations of a particular generator. Each possible increment value produces
+a different ordering of outputs, but an increment value must be odd, so
+overall there's 2^63 possible output streams. Each output stream has 2^64
+different outputs before it loops.
 
 * 'PCGen64' is a version which provides 64 bits of output per step by holding
 two different PCGen32 values, running them both one step for each step that it
 has to make, and then combining the two Word32 values it gets into a single
-Word64 value. The increment values on the two generators used aren't allowed to
-be the same (just because it'd give sorta weird results, not for any concrete
-math reason), but because there's two generators that each have 2^63 possible
-increment values, a PCGen64 has (2^63)^2-(2^63) possible increment
-configurations overall (~8.5*10^37). Each setup still only has 2^64 numbers per
-stream though.
+Word64 value. The increment values on the two generators used aren't allowed
+to be the same (just because it'd give sorta weird results, not for any
+concrete math reason), but because there's two generators that each have 2^63
+possible increment values, a PCGen64 has (2^63)^2-(2^63) possible increment
+configurations overall (~8.5*10^37). Each setup still only has 2^64 numbers
+per stream though.
 
-* 'PCGen' is an architecture-specific type alias that always matches the output
-type of the generator to your current machine width, similar to how the 'Int'
-type always matches size with your current machine width. It's possible to use a
-PCGen64 on a 32-bit device, but your output gets truncated simply by your local
-Int size, so it's a waste of your time.
+* 'PCGen' is an architecture-specific type alias that always matches the
+output type of the generator to your current machine width, similar to how the
+'Int' type always matches size with your current machine width. It's possible
+to use a PCGen64 on a 32-bit device, but your output gets truncated simply by
+your local Int size, so it's a waste of your time.
 
 In terms of speed, the generators are pretty zippy when you're on a 64-bit
 machine. On my own computer, generating a list of 10 million values via
-(evalState (replicateM 10000000 (state System.Random.next))) took 647ms for the
-'PCGen32', 755ms for the 'PCGen64', and 1415ms when using the 'StdGen' type from
-'System.Random'. Exact numbers vary from run to run of course, but you get the
-general idea.
+(evalState (replicateM 10000000 (state System.Random.next))) took 647ms for
+the 'PCGen32', 755ms for the 'PCGen64', and 1415ms when using the 'StdGen'
+type from 'System.Random'. Exact numbers vary from run to run of course, but
+you get the general idea.
 
-However, on a 32-bit machine the opposite is true: Because the internal datatype
-is Word64, and that has to be emulated on a 32-bit machine, the operations end
-up being significantly slower. Using an older P4 to test it was 5351ms for
-'PCGen32', 9943ms for 'PCGen64', and only 3909ms for 'StdGen'. So, if you're
-targeting 32-bit for some reason, this might not be for you. If you want to
-always use the fastest possible generator available, you should use a CPP macro
-where you first initialize the generator for your program and pick either
-PCGen32 or StdGen, depending on your system.
+However, on a 32-bit machine the opposite is true: Because the internal
+datatype is Word64, and that has to be emulated on a 32-bit machine, the
+operations end up being significantly slower. Using an older P4 to test it was
+5351ms for 'PCGen32', 9943ms for 'PCGen64', and only 3909ms for 'StdGen'. So,
+if you're targeting 32-bit for some reason, this might not be for you. If you
+want to always use the fastest possible generator available, you should use a
+CPP macro where you first initialize the generator for your program and pick
+either PCGen32 or StdGen, depending on your system.
 
 NOTE: Types in this module provide Read and Show instances, but the exact
 formatting used depends on if things were compiled in 32 or 64 bit mode. You
