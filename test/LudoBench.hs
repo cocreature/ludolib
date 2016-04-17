@@ -16,6 +16,8 @@ import qualified Util.PPFOV as Curr
 --import qualified Util.PPFOVNext as Next
 import Data.PCGen as Curr
 --import Data.PCGenNext as Next
+import Util.AutomataGen
+import Control.Monad.Random
 
 -- | Orphan, but that's alright.
 instance NFData Location where
@@ -80,6 +82,9 @@ instance NFData Curr.PCGen64 where
     -- rnf :: a -> ()
     rnf gen = gen `seq` ()
 
+instance NFData SimpleDungeon where
+    rnf (SimpleDungeon w h v) = w `seq` h `seq` (rnf v) `seq` ()
+
 {-
 -- Holds two Word#
 instance NFData Next.PCGen32 where
@@ -100,4 +105,8 @@ pcgenMain = defaultMain [
     --bench "Next PCGen64, 10 million uses" $ nf loopNext (Next.mkPCGen64 5 5 7 7)
     ]
 
-main = fovMain
+automataMain = defaultMain [
+    bench "AutomataGen" $ nf (runRand (mkCaves 100 100)) (mkPCGen 5)
+    ]
+
+main = automataMain

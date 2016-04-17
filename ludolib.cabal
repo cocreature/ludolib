@@ -45,6 +45,7 @@ executable ludobench
     build-depends:      base,
                         ludolib,
                         criterion,
+                        MonadRandom,
                         deepseq,
                         containers,
                         mtl,
