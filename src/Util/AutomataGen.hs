@@ -19,6 +19,7 @@ import Control.Monad.Trans.Class
 
 import Data.Bool
 import Data.Location
+import Data.Tuple
 
 import Control.RNG
 
@@ -131,3 +132,13 @@ caveCopy' width height src dst = do
         withinOne <- (\bools -> (9-length oneIndexes) + length (filter id bools)) <$> mapM (VM.read src) oneIndexes
         --withinTwo <- (length . filter id) <$> mapM (VM.read src) (inRange (width,height) (x,y) 2)
         VM.write dst (x+y*width) (withinOne>=5)
+
+{-| @ fromIndex index width @
+
+Turns an index into a location
+-}
+fromIndex :: Int -> Int -> (Int,Int)
+fromIndex width index = swap $ divMod index width
+
+toIndex :: Int -> (Int,Int) -> Int
+toIndex width (x,y) = (x + y*width)
