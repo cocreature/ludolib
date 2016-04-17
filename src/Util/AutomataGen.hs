@@ -99,8 +99,14 @@ mkCaves :: MonadRandom m => Int -> Int -> m SimpleDungeon
 mkCaves width height = do
     base <- mkRandom width height 40
     let autoResult = runST $ do
-            foo <- V.thaw base
-            bar <- VM.replicate (width*height) False
+            V.unsafeThaw base
+            foo <- VM.unsafeNew (width*height)
+            forM_ [(x,y) | x <- [0 .. width-1], y <- [0 .. height-1]] $ \(x,y) -> do
+                let index = toIndex width (x,y)
+                if base V.! index
+                    then VM.unsafeWrite foo index 1
+                    else VM.unsafeWrite foo index 0
+            bar <- VM.unsafeNew (width*height)
             caveCopy width height foo bar
             caveCopy width height bar foo
             caveCopy width height foo bar
@@ -111,35 +117,35 @@ mkCaves width height = do
                 Nothing -> return Nothing
                 Just i -> do
                     -- We set the destination to be all walls.
-                    mapM_ (\i -> VM.unsafeWrite foo i True) [0 .. (width*height) -1]
+                    mapM_ (\i -> VM.unsafeWrite foo i 1) [0 .. (width*height) -1]
                     -- Copy the open space into it
                     closedSet <- newSTRef (S.empty)
                     floodCopy8 width height bar foo closedSet i
                     Just <$> V.unsafeFreeze foo
     case autoResult of
         Nothing -> mkCaves width height
-        Just vec -> return $ SimpleDungeon width height vec
+        Just wordVec -> return $ SimpleDungeon width height (V.map (>0) wordVec)
 
-findOpen :: PrimMonad m => VM.MVector (PrimState m) Bool -> m (Maybe Int)
+findOpen :: PrimMonad m => VM.MVector (PrimState m) Word -> m (Maybe Int)
 findOpen vec = do
     let mid = VM.length vec `div` 2
         indexes = [0 .. VM.length vec -1] :: [Int]
         toCheck = drop mid indexes ++ take mid indexes -- this starts us in the middleish
         go [] = return Nothing
         go (x:xs) = do
-            isWall <- VM.unsafeRead vec x
-            if not isWall then return (Just x) else go xs
+            isFloor <- (==0) <$> VM.unsafeRead vec x
+            if isFloor then return (Just x) else go xs
     go toCheck
 
-floodCopy8 :: Int -> Int -> VM.MVector s Bool -> VM.MVector s Bool -> STRef s (Set Int) -> Int -> ST s ()
+floodCopy8 :: Int -> Int -> VM.MVector s Word -> VM.MVector s Word -> STRef s (Set Int) -> Int -> ST s ()
 floodCopy8 width height src dst closedSet i = do
     already <- (S.member i) <$> readSTRef closedSet
-    wallHere <- VM.unsafeRead src i
+    isFloor <- (==0) <$> VM.unsafeRead src i
     -- true = wall, so we copy and spread out when we get a false
-    if not wallHere && not already
+    if isFloor && not already
         then do
             modifySTRef' closedSet (S.insert i)
-            VM.unsafeWrite dst i False
+            VM.unsafeWrite dst i 0
             let loc = fromIndex width i
                 indexes = inRange (width,height) loc 1
             mapM_ (floodCopy8 width height src dst closedSet) indexes
@@ -189,17 +195,17 @@ atRange2 (width,height) (cx,cy) = do
 Copies info from src to dst, not directly, but based on a cellular automata
 style system.
 -}
-caveCopy :: PrimMonad m => Int -> Int -> VM.MVector (PrimState m) Bool -> VM.MVector (PrimState m) Bool -> m ()
+caveCopy :: PrimMonad m => Int -> Int -> VM.MVector (PrimState m) Word -> VM.MVector (PrimState m) Word -> m ()
 caveCopy width height src dst = do
     forM_ [(x,y) | x <- [0 .. width-1], y <- [0 .. height-1]] $ \(x,y) -> do
         let oneIndexes = toIndex width (x,y) : (atRange1 (width,height) (x,y))
-        withinOne <- (\bools -> (9-length oneIndexes) + length (filter id bools)) <$> mapM (VM.unsafeRead src) oneIndexes
+        withinOne <- (\words -> (9-length oneIndexes) + length (filter (==1) words)) <$> mapM (VM.unsafeRead src) oneIndexes
         if withinOne >= 5
-            then VM.unsafeWrite dst (x+y*width) True
+            then VM.unsafeWrite dst (x+y*width) 1
             else do
                 let twoIndexes = (atRange2 (width,height) (x,y))
-                withinTwo <- (\bools -> (25-length twoIndexes) + length (filter id bools) + withinOne) <$> mapM (VM.unsafeRead src) twoIndexes
-                VM.unsafeWrite dst (toIndex width (x,y)) (withinTwo <=2)
+                withinTwo <- (\words -> (25-length twoIndexes) + length (filter (==1) words) + withinOne) <$> mapM (VM.unsafeRead src) twoIndexes
+                VM.unsafeWrite dst (toIndex width (x,y)) (if (withinTwo <=2) then 1 else 0)
 
 {-| @ fromIndex index width @
 
