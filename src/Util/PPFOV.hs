@@ -4,9 +4,26 @@
 'computeFOV' and supply a 'VisionBlocked' function, the computation range, and
 the starting 'Location'. You get a 'Set Location' back.
 
-You can also use 'isLOSBetween' with a VisionBlocked and two Locations to get a
-Bool of if vision is blocked between the locations or not. It will take about
-1/4th the time of a full FOV calc, since it only has to check one quadrant.
+You can also use 'isLOSBetween' with a VisionBlocked and two Locations to get
+a Bool of if vision is blocked between the locations or not. It will take
+about 1/4th the time of a full FOV calc, since it only has to check one
+quadrant.
+
+Precise Permissive FOV does not have any approximation errors, and so it is
+accurate out to any range, and always fully reflective. It runs fairly
+quickly, but it's still an O(n^2) operation, so large vision ranges with a
+large number of creatures can end up taking some time to compute. The
+computation ends early of course if all of a particular vision ends up being
+blocked off. For exampe, if you the player is in a 3x3 room, a maximum vision
+range of 50 and a maximum range of 10 would have the same time taken since the
+vision stops at the walls of the room either way. Further, as long as the
+terrain itself isn't changing, you can of course simply cache the results of
+an FOV computation if that's needed. On my machine, Range 10 vision takes less
+than 1ms and Range 50 takes around 24ms in a crowded area. The 'VisionBlocked'
+function provided has a large impact on the time taken as well.
+
+For full details on how it works, see the roguebasin article:
+http://www.roguebasin.com/index.php?title=Precise_Permissive_Field_of_View
 -}
 module Util.PPFOV (
     VisionBlocked,
