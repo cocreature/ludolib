@@ -106,7 +106,7 @@ pcgenMain = defaultMain [
     ]
 
 automataMain = defaultMain [
-    bench "AutomataGen" $ nf (runRand (mkCaves 100 100)) (mkPCGen 5)
+    bench "AutomataGen" $ nf (runRand (mkCaves 200 200)) (mkPCGen 5)
     ]
 
 main = automataMain
