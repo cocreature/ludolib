@@ -49,8 +49,8 @@ for your program and pick either PCGen32 or StdGen, depending on your system.
 In terms of memory, the PCGen32 always takes up two Word64, and the PCGen64
 always takes up four Word64. In comparison, the StdGen always uses two Int.
 
-In terms of the genRange on the generator, the StdGen simply pales compared to
-even the PCGen32:
+In terms of the genRange on the generator, the StdGen simply pales in
+comparison to either version of PCGen. On a 64 machine it's as follows:
 
 * genRange StdGen: (1,2147483562)
 * genRange PCGen32: (0,4294967295)
@@ -116,9 +116,9 @@ boost.
 data PCGen32 = PCGen32 Word# Word#
 
 {-| Given two Word64 values, constructs a PCGen32 and runs the generator once,
-giving you back the resulting generator. The generator is run once automatically
-because most initial state values that a human picks end up giving 0 as the
-first result, which is pretty un-random overall.
+giving you back the resulting generator. The generator is run once
+automatically because most initial state values that a human picks end up
+giving 0 as the first result, which is pretty un-random overall.
 -}
 mkPCGen32 :: Word64 -> Word64 -> PCGen32
 mkPCGen32 state64 inc64 = let
@@ -166,7 +166,8 @@ instance Eq PCGen32 where
     (==) !(PCGen32 stA incA) !(PCGen32 stB incB) = isTrue# (andI# (eqWord# stA stB) (eqWord# incA incB))
 
 {-| PCGen32 are ordered by incriment, then by state. The order isn't intended to
-be used for anything other than to potentially put PCGen32 values into a 'Set'.
+be used for anything other than to potentially put PCGen32 values into a
+'Set'.
 -}
 instance Ord PCGen32 where
     compare !(PCGen32 stA incA) !(PCGen32 stB incB) = case compare (W# incA) (W# incB) of
@@ -182,9 +183,9 @@ showReadPrefix32 = "PCGen32"
 instance Show PCGen32 where
     show !(PCGen32 st inc) = showReadPrefix32 ++ " " ++ show (W# st) ++ " " ++ show (W# inc)
 
-{-| The show and read for PCGen32 will remake the exact same PCGen32. Ensures that
-the inc value is always odd, but that won't affect you if you only get PCGen32
-strings from uses of the show function.
+{-| The show and read for PCGen32 will remake the exact same PCGen32. Ensures
+that the inc value is always odd, but that won't affect you if you only get
+PCGen32 strings from uses of the show function.
 -}
 instance Read PCGen32 where
     -- readsPrec :: Int -> String -> [(a, String)]
@@ -259,7 +260,8 @@ instance Eq PCGen64 where
                        (andI# (eqWord# stB stB') (eqWord# incB incB')))
 
 {-| PCGen32 are ordered by incriment, then by state. The order isn't intended to
-be used for anything other than to potentially put PCGen32 values into a 'Set'.
+be used for anything other than to potentially put PCGen32 values into a
+'Set'.
 -}
 instance Ord PCGen64 where
     compare !(PCGen64 stA incA stB incB) !(PCGen64 stA' incA' stB' incB') = case compare (W# incA) (W# incA') of
@@ -285,10 +287,10 @@ instance Show PCGen64 where
         " " ++ show (W# stB) ++
         " " ++ show (W# incB)
 
-{-| The show and read for PCGen64 will remake the exact same PCGen64. Ensures that
-the inc values are always odd, and that the inc values are out of phase, but
-neither of these thing will affect you if you only get PCGen64 strings from uses
-of the show function.
+{-| The show and read for PCGen64 will remake the exact same PCGen64. Ensures
+that the inc values are always odd, and that the inc values are out of phase,
+but neither of these thing will affect you if you only get PCGen64 strings
+from uses of the show function.
 -}
 instance Read PCGen64 where
     -- readsPrec :: Int -> String -> [(a, String)]
@@ -321,8 +323,8 @@ This haddock was generated on a 64-bit machine, so PCGen is the same as 'PCGen64
 -}
 type PCGen = PCGen64
 
-{-| Constructs a new PCGen from any Integral value by using the value given as all
-four values to 'mkPCGen64'.
+{-| Constructs a new PCGen from any Integral value by using the value given as
+all four values to 'mkPCGen64'.
 -}
 mkPCGen :: (Integral i) => i -> PCGen
 mkPCGen i = let a = fromIntegral i in mkPCGen64 a a a a
@@ -343,9 +345,9 @@ mkPCGen i = let a = fromIntegral i in mkPCGen64 a a a a
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 {-
-On 32-bit machines, I really don't want to deal with the troubles of making two
-Word# values work as a single Word64, so we'll just let our data stay wrapped
-up. Things are still pretty fast, just not as fast.
+On 32-bit machines, I really don't want to deal with the troubles of making
+two Word# values work as a single Word64, so we'll just let our data stay
+wrapped up. Things are still pretty fast, just not as fast.
 -}
 
 -- -- -- -- --
@@ -356,8 +358,8 @@ up. Things are still pretty fast, just not as fast.
 step. Equal when both internal values are equal. Ordered in some arbitrary way
 that doesn't matter, it's just so you can put it into a set. Read and Show are
 both derived, allowing you to serialize your PCGen32. This derived Read won't
-ensure that the inc value is odd if you give it a string that you made yourself
-instead of a string that came from show.
+ensure that the inc value is odd if you give it a string that you made
+yourself instead of a string that came from show.
 -}
 data PCGen32 = PCGen32 {
     _state32 :: {-# UNPACK #-} !Word64, -- ^ The internal state of the generator.
@@ -381,8 +383,8 @@ stepPCGen32 (PCGen32 state inc) = (w, newGen)
           newGen = PCGen32 newState inc
 
 {-| Mostly what you'd expect. The output Word32 is turned into an Int32 before
-it's turned into an Int, so that the output is both positive and negative, which
-matches up better with how the PCGen64 version works.
+it's turned into an Int, so that the output is both positive and negative,
+which matches up better with how the PCGen64 version works.
 -}
 instance RandomGen PCGen32 where
     next gen = (outInt, nextGen)
@@ -425,9 +427,9 @@ data PCGen64 = PCGen64 {
 
 {-| The Inc value on a PCGen64 must always be odd, so this ensures that that is
 the case. The generators should also have different increment values from each
-other, which this also checks.  If the values given woule have them be the same,
-the second generator's inc value is bumped up, so that the generators are always
-out of phase with each other.
+other, which this also checks.  If the values given would have them be the
+same, the second generator's inc value is bumped up, so that the generators
+are always out of phase with each other.
 -}
 mkPCGen64 :: Word64 -> Word64 -> Word64 -> Word64 -> PCGen64
 mkPCGen64 sa ia sb ib = out
