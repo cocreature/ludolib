@@ -16,3 +16,14 @@ forLoop test body after = do
     if b
         then body >> after >> forLoop test body after
         else return ()
+
+{-| Like 'when' from Control.Monad, but instead of taking a Bool, it takes an
+action that will produce a Bool. If the action produces True, it runs the
+body, otherwise it does not run the body.
+-}
+whenM :: Monad m => m Bool -> m body -> m ()
+whenM test body = do
+    b <- test
+    if b
+        then body >> return ()
+        else return ()
