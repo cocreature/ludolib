@@ -111,13 +111,13 @@ fovMain = defaultMain [
 |_|  \_\_| \_|\_____| |____/ \___|_| |_|\___|_| |_|
 -}
 
-loopNext :: RandomGen s => s -> [Int]
-loopNext = (evalState (replicateM 10000000 (state System.Random.next)))
+loopNext :: RandomGen s => s -> s
+loopNext = (execState (replicateM 1000000 (state System.Random.next)))
 
 pcgenMain = defaultMain [
-    bench "StdGen, 10 million uses" $ nf loopNext (mkStdGen 12345),
-    bench "Curr PCGen32, 10 million uses" $ nf loopNext (Curr.mkPCGen32 5 5),
-    bench "Curr PCGen64, 10 million uses" $ nf loopNext (Curr.mkPCGen64 5 5 7 7)
+    bench "StdGen, 1 million uses" $ nf loopNext (mkStdGen 12345),
+    bench "Curr PCGen32, 1 million uses" $ nf loopNext (Curr.mkPCGen32 5 5),
+    bench "Curr PCGen64, 1 million uses" $ nf loopNext (Curr.mkPCGen64 5 5 7 7)
     --bench "Next PCGen32, 10 million uses" $ nf loopNext (Next.mkPCGen32 5 5),
     --bench "Next PCGen64, 10 million uses" $ nf loopNext (Next.mkPCGen64 5 5 7 7)
     ]
@@ -135,4 +135,4 @@ automataMain = defaultMain [
     bench "AutomataGen" $ nf (runRand (mkCaves 200 200)) (mkPCGen 5)
     ]
 
-main = automataMain
+main = pcgenMain
