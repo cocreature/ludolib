@@ -66,14 +66,16 @@ module Data.PCGen (
     -- * 32 bits of output
     PCGen32(),
     mkPCGen32,
-    
+
     -- * 64 bits of output
     PCGen64(),
     mkPCGen64,
-    
+
     -- * Locally sized output
     PCGen,
-    mkPCGen
+    NextGen(..),
+    mkPCGen,
+    next'
     ) where
 
 import System.Random
@@ -92,14 +94,14 @@ import GHC.Prim
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
---    __ _  _     ____  _ _      _____           _                     
---   / /| || |   |  _ \(_) |    / ____|         | |                    
---  / /_| || |_  | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___ 
+--    __ _  _     ____  _ _      _____           _
+--   / /| || |   |  _ \(_) |    / ____|         | |
+--  / /_| || |_  | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___
 -- | '_ \__   _| |  _ <| | __|  \___ \| | | / __| __/ _ \ '_ ` _ \/ __|
 -- | (_) | | |   | |_) | | |_   ____) | |_| \__ \ ||  __/ | | | | \__ \
 --  \___/  |_|   |____/|_|\__| |_____/ \__, |___/\__\___|_| |_| |_|___/
---                                      __/ |                          
---                                     |___/                           
+--                                      __/ |
+--                                     |___/
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -115,7 +117,7 @@ boost.
 
 {-| A permuted congruential generator that produces 32 bits of randomness per step.
 -}
-data PCGen32 = PCGen32 Word# Word#
+data PCGen32 = PCGen32 !Word# !Word#
 
 {-| Given two Word64 values, constructs a PCGen32 and runs the generator once,
 giving you back the resulting generator. The generator is run once
@@ -131,8 +133,12 @@ mkPCGen32 state64 inc64 = let
 {-| The genRange of a PCGen32 on a 64 bit system is 0 through 4,294,967,295 (aka
 0xFFFFFFFF, all lower 32 bits active).
 -}
+
+data NextGen = NextGen !Int !PCGen32 deriving (Show)
+
+
 instance RandomGen PCGen32 where
-    next !(PCGen32 st inc) = (I# (word2Int# (narrow32Word# w)),newGen) where
+    next !(PCGen32 st inc) = seq newGen (I# (word2Int# (narrow32Word# w)),newGen) where
         xorShifted = uncheckedShiftRL# (xor# (uncheckedShiftRL# st 18#) st) 27#
         rot = uncheckedShiftRL# st 59#
         w = or# (uncheckedShiftRL# xorShifted (word2Int# rot)) (uncheckedShiftL# xorShifted (word2Int# (and# (minusWord# 0## rot) 31##)))
@@ -151,6 +157,14 @@ instance RandomGen PCGen32 where
             incB = or# (uncheckedShiftL# (int2Word# e) 32#) (int2Word# r)
             outA = PCGen32 stateA (or# incA 1##)
             outB = PCGen32 stateB (or# incB 1##)
+
+next' :: PCGen32 -> NextGen
+next' (PCGen32 st inc) = NextGen (I# (word2Int# (narrow32Word# w))) newGen where
+    xorShifted = uncheckedShiftRL# (xor# (uncheckedShiftRL# st 18#) st) 27#
+    rot = uncheckedShiftRL# st 59#
+    w = or# (uncheckedShiftRL# xorShifted (word2Int# rot)) (uncheckedShiftL# xorShifted (word2Int# (and# (minusWord# 0## rot) 31##)))
+    newState = plusWord# (timesWord# st 6364136223846793005##) inc
+    newGen = PCGen32 newState inc
 
 {-| randomR is the same as random for this type.
 -}
@@ -335,14 +349,14 @@ mkPCGen i = let a = fromIntegral i in mkPCGen64 a a a a
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
---  ____ ___    ____  _ _      _____           _                     
--- |___ \__ \  |  _ \(_) |    / ____|         | |                    
---   __) | ) | | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___ 
+--  ____ ___    ____  _ _      _____           _
+-- |___ \__ \  |  _ \(_) |    / ____|         | |
+--   __) | ) | | |_) |_| |_  | (___  _   _ ___| |_ ___ _ __ ___  ___
 --  |__ < / /  |  _ <| | __|  \___ \| | | / __| __/ _ \ '_ ` _ \/ __|
 --  ___) / /_  | |_) | | |_   ____) | |_| \__ \ ||  __/ | | | | \__ \
 -- |____/____| |____/|_|\__| |_____/ \__, |___/\__\___|_| |_| |_|___/
---                                    __/ |                          
---                                   |___/                           
+--                                    __/ |
+--                                   |___/
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --

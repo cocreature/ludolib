@@ -55,10 +55,10 @@ instance NFData Next.PCGen64 where
 -}
 
 {-
- ______ ______      __  ____                  _     
-|  ____/ __ \ \    / / |  _ \                | |    
-| |__ | |  | \ \  / /  | |_) | ___ _ __   ___| |__  
-|  __|| |  | |\ \/ /   |  _ < / _ \ '_ \ / __| '_ \ 
+ ______ ______      __  ____                  _
+|  ____/ __ \ \    / / |  _ \                | |
+| |__ | |  | \ \  / /  | |_) | ___ _ __   ___| |__
+|  __|| |  | |\ \/ /   |  _ < / _ \ '_ \ / __| '_ \
 | |   | |__| | \  /    | |_) |  __/ | | | (__| | | |
 |_|    \____/   \/     |____/ \___|_| |_|\___|_| |_|
 -}
@@ -103,10 +103,10 @@ fovMain = defaultMain [
     ]
 
 {-
- _____  _   _  _____   ____                  _     
-|  __ \| \ | |/ ____| |  _ \                | |    
-| |__) |  \| | |  __  | |_) | ___ _ __   ___| |__  
-|  _  /| . ` | | |_ | |  _ < / _ \ '_ \ / __| '_ \ 
+ _____  _   _  _____   ____                  _
+|  __ \| \ | |/ ____| |  _ \                | |
+| |__) |  \| | |  __  | |_) | ___ _ __   ___| |__
+|  _  /| . ` | | |_ | |  _ < / _ \ '_ \ / __| '_ \
 | | \ \| |\  | |__| | | |_) |  __/ | | | (__| | | |
 |_|  \_\_| \_|\_____| |____/ \___|_| |_|\___|_| |_|
 -}
@@ -114,19 +114,25 @@ fovMain = defaultMain [
 loopNext :: RandomGen s => s -> s
 loopNext = (execState (replicateM 1000000 (state System.Random.next)))
 
+loop :: Int -> PCGen32 -> PCGen32
+loop 0 x = x
+loop n x = let (NextGen i gen) = next' x in
+           seq i $ loop (n-1) gen
+
 pcgenMain = defaultMain [
     bench "StdGen, 1 million uses" $ nf loopNext (mkStdGen 12345),
-    bench "Curr PCGen32, 1 million uses" $ nf loopNext (Curr.mkPCGen32 5 5),
+    bench "Curr PCGen32, 1 million uses" $ nf (loop 1000000) (Curr.mkPCGen32 5 5),
+        bench "Curr PCGen32, 1 million uses" $ nf loopNext (Curr.mkPCGen32 5 5),
     bench "Curr PCGen64, 1 million uses" $ nf loopNext (Curr.mkPCGen64 5 5 7 7)
     --bench "Next PCGen32, 10 million uses" $ nf loopNext (Next.mkPCGen32 5 5),
     --bench "Next PCGen64, 10 million uses" $ nf loopNext (Next.mkPCGen64 5 5 7 7)
     ]
 
 {-
-               _          ____                  _     
-    /\        | |        |  _ \                | |    
-   /  \  _   _| |_ ___   | |_) | ___ _ __   ___| |__  
-  / /\ \| | | | __/ _ \  |  _ < / _ \ '_ \ / __| '_ \ 
+               _          ____                  _
+    /\        | |        |  _ \                | |
+   /  \  _   _| |_ ___   | |_) | ___ _ __   ___| |__
+  / /\ \| | | | __/ _ \  |  _ < / _ \ '_ \ / __| '_ \
  / ____ \ |_| | || (_) | | |_) |  __/ | | | (__| | | |
 /_/    \_\__,_|\__\___/  |____/ \___|_| |_|\___|_| |_|
 -}
