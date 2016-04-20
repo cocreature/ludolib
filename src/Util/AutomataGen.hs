@@ -5,8 +5,8 @@ INCOMPLETE AT THE MOMENT
 -}
 module Util.AutomataGen (
     SimpleDungeon(..),
-    hasWall,
     formatSimple,
+    hasWall,
     mkDungeon,
     mkOutline,
     mkRandom,
@@ -23,6 +23,7 @@ import Control.RNG
 
 import Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
+import Data.Vector.Unboxed.Mutable (STVector)
 import qualified Data.Vector.Unboxed.Mutable as VM
 import Data.Bool
 import Data.Location
@@ -31,17 +32,16 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import Data.STRef
 
-{-| There's a lot of features a dungeon can have in a game, but for cellular
-automata work we just need to know what space we're working with and if there's
-a wall or not in each cell.
+{-| There's a lot of features a dungeon can have in a game, but for the simplest
+work we just need to know where the walls are and where the floors are.
 -}
 data SimpleDungeon = SimpleDungeon {
-    _getWidth :: !Int, -- ^ the width of this dungeon
-    _getHeight :: !Int, -- ^ the height of this dungeon
+    _getWidth :: !Int,
+    _getHeight :: !Int,
     _getWalls :: !(Vector Bool)
     } deriving (Eq, Ord, Show)
 
-{-| Turns a 'SimpleDungeon' into a String suitable for use with 'putStrLn'
+{-| Turns a 'SimpleDungeon' into a String suitable for use with 'putStrLn'.
 -}
 formatSimple :: SimpleDungeon -> String
 formatSimple d = let
@@ -54,20 +54,8 @@ formatSimple d = let
     groupsOf x elems = take x elems : groupsOf x (drop x elems)
     in unlines $ groupsOf width chars
 
-{-| @fromIndex index width@, Turns an index into a location
--}
-fromIndex :: Int -> Int -> Location
-fromIndex width index = Location $ swap $ divMod index width
-{-# INLINE fromIndex #-}
-
-{-| @toIndex width (x,y)@, Turns a location into an index
--}
-toIndex :: Int -> Location -> Int
-toIndex width (Location (x,y)) = (x + y*width)
-{-# INLINE toIndex #-}
-
-{-| If the location specified has a wall. Out of bounds locations default to
-True so that players don't walk off the edge.
+{-| Simplies the process of checking for a wall. Out of bounds locations default
+to 'True', which makes this easy to use with Pathfinding and FOV.
 -}
 hasWall :: SimpleDungeon -> Location -> Bool
 hasWall d loc = let
@@ -83,73 +71,58 @@ hasWall d loc = let
 mkDungeon :: Int -> Int -> Bool -> SimpleDungeon
 mkDungeon width height cell = SimpleDungeon width height (V.replicate (width*height) cell)
 
-{-| Makes a dungeon that's all floor except for an outline of walls around the
+{-| Makes a dungeon that's blank except for an outline of walls around the
 edges.
 -}
 mkOutline :: Int -> Int -> SimpleDungeon
 mkOutline width height = SimpleDungeon width height $ runST $ do
-    d <- VM.unsafeNew (width*height) 
+    d <- VM.replicate (width*height) False
     forM_ [(x,y) | x <- [0 .. width-1], y <- [0 .. height-1]] $ \(x,y) ->
-        VM.write d (toIndex width (Location (x,y))) (x == 0 || y == 0 || x == width-1 || y == height-1)
+        when (x == 0 || y == 0 || x == width-1 || y == height-1) $
+            VM.write d (toIndex width (Location (x,y))) True
     V.unsafeFreeze d
 
-{-| @mkRandom width height chance@, Makes a @width*height@ length Vector Bool
-where each cell has a @chance@ percent chance of being True. This lets you
-have a field of random bushes or rocks or something.
+{-| @mkRandom width height chance@, Makes a SimpleDungeon where each cell has a
+@chance@ percent chance of being True. This lets you have a field of bushes or
+trees or whatever.
 -}
-mkRandom :: MonadRandom m => Int -> Int -> Int -> m (Vector Bool)
-mkRandom width height chance = V.replicateM (width*height) (rollChance chance)
+mkRandom :: MonadRandom m => Int -> Int -> Int -> m SimpleDungeon
+mkRandom width height chance = SimpleDungeon width height <$> V.replicateM (width*height) (rollChance chance)
 
 {-| @mkCaves width height@, Produces a SimpleDungeon based on a cellular
-automata technique. Portions not connected to the main cave at the end are
-automatically filled in for you.
+automata technique. Automatically fills in any disconnected regions after the
+automata process. If there's no open space after the main generation then it
+will fail. This usually only happens when the map size is excessively small,
+so just stick to maps that are at least 10 in both dimensions. The results of
+this dungeon generator are usually a lot of twisty narrow tunnels that
+interconnect all over.
 -}
-mkCaves :: MonadRandom m => Int -> Int -> m SimpleDungeon
+mkCaves :: MonadRandom m => Int -> Int -> m (Maybe SimpleDungeon)
 mkCaves width height = do
     let len = width * height
-    -- using Word gives better locality than using Bool, I guess.
-    base <- V.replicateM len ((bool (0::Word) 1) <$> (rollChance (40::Word)))
-    let autoResult = runST $ do
-            foo <- V.unsafeThaw base
-            bar <- VM.unsafeNew len
-            caveCopy width height foo bar
-            caveCopy width height bar foo
-            caveCopy width height foo bar
-            caveCopy width height bar foo
-            caveCopy width height foo bar
-            maybeLoc <- findOpen bar
-            case maybeLoc of
-                Nothing -> return Nothing
-                Just i -> do
-                    -- We set the destination to be all walls.
-                    mapM_ (\i -> VM.unsafeWrite foo i 1) [0 .. len -1]
-                    -- Copy the open space into it
-                    closedSet <- newSTRef (S.empty)
-                    floodCopy8 width height bar foo closedSet i
-                    Just <$> V.unsafeFreeze foo
-    case autoResult of
-        -- somehow there's no floor anywhere, so we'll just try again. the RNG moved, so it'll be okay.
-        Nothing -> mkCaves width height
-        -- success!
-        Just wordVec -> return $ SimpleDungeon width height (V.map (>0) wordVec)
+    base <- V.replicateM len ((bool (0::Word) 1) <$> rollChance (40::Word))
+    return . fmap (SimpleDungeon width height . V.map (>0)) $ runST $ do
+        foo <- V.unsafeThaw base
+        bar <- VM.unsafeNew len
+        caveCopy width height foo bar
+        caveCopy width height bar foo
+        caveCopy width height foo bar
+        caveCopy width height bar foo
+        caveCopy width height foo bar
+        maybeLoc <- findOpen bar
+        case maybeLoc of
+            Nothing -> return Nothing
+            Just i -> do
+                -- We set the destination space to be all walls.
+                mapM_ (\i -> VM.unsafeWrite foo i 1) [0 .. len -1]
+                -- Then copy the open space into it.
+                closedSet <- newSTRef (S.empty)
+                floodCopy8 width height bar foo closedSet i
+                Just <$> V.unsafeFreeze foo
 
-{-| @caveCopy width height src dst@, Copies info from src to dst, not directly,
-but based on a cellular automata style system.
--}
-caveCopy :: PrimMonad m => Int -> Int -> VM.MVector (PrimState m) Word -> VM.MVector (PrimState m) Word -> m ()
-caveCopy width height src dst = do
-    forM_ [(x,y) | x <- [0 .. width-1], y <- [0 .. height-1]] $ \(x,y) -> do
-        let oneIndexes = toIndex width (Location (x,y)) : (atRange1 (width,height) (Location (x,y)))
-        withinOne <- (\words -> (9-length oneIndexes) + length (filter (==1) words)) <$> mapM (VM.unsafeRead src) oneIndexes
-        if withinOne >= 5
-            then VM.unsafeWrite dst (x+y*width) 1
-            else do
-                let twoIndexes = (atRange2 (width,height) (Location (x,y)))
-                withinTwo <- (\words -> (25-length twoIndexes) + length (filter (==1) words) + withinOne) <$> mapM (VM.unsafeRead src) twoIndexes
-                VM.unsafeWrite dst (toIndex width (Location (x,y))) (if (withinTwo <=2) then 1 else 0)
-
-{-| Finds an open space inside the vector specified, if possible. Starts in the
-middleish.
+{-| Finds an open space, if possible. Starts around the middle of the vector,
+which hopefully avoids picking any small disconnected spaces that sometimes
+appear at the edges of a map.
 -}
 findOpen :: PrimMonad m => VM.MVector (PrimState m) Word -> m (Maybe Int)
 findOpen vec = do
@@ -162,23 +135,53 @@ findOpen vec = do
             if isFloor then return (Just x) else go xs
     go toCheck
 
-{-| @floodCopy8 width height src dst closedSet i@, if @i@ is a floor and not in
-the closed set, adds it to the closed set and writes that location to be floor
-in @dst@, then spreads out recursively in all 8 directions. If @i@ is in the
-closed set it stops that branch of the recusive descent.
+{-| @floodCopy8 width height src dst closedSet i@ performs a copy from src to
+dst that floods out from the initial index given in all 8 directions.
 -}
 floodCopy8 :: Int -> Int -> VM.MVector s Word -> VM.MVector s Word -> STRef s (Set Int) -> Int -> ST s ()
 floodCopy8 width height src dst closedSet i = do
-    already <- (S.member i) <$> readSTRef closedSet
-    isFloor <- (==0) <$> VM.unsafeRead src i
-    -- true = wall, so we copy and spread out when we get a false
-    if isFloor && not already
-        then do
-            modifySTRef' closedSet (S.insert i)
+    -- have we been here before?
+    notFloodedHere <- not.(S.member i) <$> readSTRef closedSet
+    when (notFloodedHere) $ do
+        -- If not, mark that we have now, and check for a floor
+        modifySTRef' closedSet (S.insert i)
+        hereIsFloor <- (==0) <$> VM.unsafeRead src i
+        when (hereIsFloor) $ do
+            -- if there's a floor, write that to dst and recurse
             VM.unsafeWrite dst i 0
-            let indexes = atRange1 (width,height) (fromIndex width i)
+            let loc = fromIndex width i
+                indexes = atRange1 (width,height) loc
             mapM_ (floodCopy8 width height src dst closedSet) indexes
-        else return ()
+
+{-| @caveCopy width height src dst@, copies from src to dst, not directly, but
+based on a cellular automata style system. If there's 5 or more cells active
+within 1 square, the square is always active. Otherwise, if there's less than
+2 cells active within 2 then the cell will always be active. Otherwise, the
+new cell is the same as the old cell.
+-}
+caveCopy :: PrimMonad m => Int -> Int -> VM.MVector (PrimState m) Word -> VM.MVector (PrimState m) Word -> m ()
+caveCopy width height src dst = do
+    forM_ [(x,y) | x <- [0 .. width-1], y <- [0 .. height-1]] $ \(x,y) -> do
+        let oneIndexes = toIndex width (Location (x,y)) : (atRange1 (width,height) (Location (x,y)))
+        withinOne <- (\words -> (9-length oneIndexes) + length (filter (>0) words)) <$> mapM (VM.unsafeRead src) oneIndexes
+        if withinOne >= 5
+            then VM.unsafeWrite dst (toIndex width (Location (x,y))) 1
+            else do
+                let twoIndexes = (atRange2 (width,height) (Location (x,y)))
+                withinTwo <- (\words -> (25-(length twoIndexes + length oneIndexes)) + length (filter (>0) words) + withinOne) <$> mapM (VM.unsafeRead src) twoIndexes
+                VM.unsafeWrite dst (toIndex width (Location (x,y))) (if (withinTwo <=2) then 1 else 0)
+
+{-| @fromIndex width index@, turns an index into a Location.
+-}
+fromIndex :: Int -> Int -> Location
+fromIndex width index = Location $ swap $ divMod index width
+{-# INLINE fromIndex #-}
+
+{-| @toIndex width location@, Turns a Location into an index
+-}
+toIndex :: Int -> Location -> Int
+toIndex width (Location (x,y)) = (x + y*width)
+{-# INLINE toIndex #-}
 
 {-| @atRange1 (width,height) (cx,cy)@, Gives the list of all indexes that are
 exactly range 1 from the location given.

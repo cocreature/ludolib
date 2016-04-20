@@ -135,4 +135,4 @@ automataMain = defaultMain [
     bench "AutomataGen" $ nf (runRand (mkCaves 200 200)) (mkPCGen 5)
     ]
 
-main = fovMain
+main = automataMain
