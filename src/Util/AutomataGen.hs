@@ -118,6 +118,7 @@ mkCaves width height = do
                 -- Then copy the open space into it.
                 closedSet <- newSTRef (S.empty)
                 floodCopy8 width height bar foo closedSet i
+                -- TODO FLOOD COPY SHOULD PROBABLY CONVERT TO BOOL AS IT GOES
                 Just <$> V.unsafeFreeze foo
 
 {-| Finds an open space, if possible. Starts around the middle of the vector,
