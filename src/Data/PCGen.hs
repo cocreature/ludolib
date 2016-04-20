@@ -34,17 +34,19 @@ your local Int size, so it's a waste of your time.
 
 In terms of speed, the generators are pretty zippy when you're on a 64-bit
 machine. On my own computer, generating a list of 1 million values via
-@(execState (replicateM 1000000 (state System.Random.next)))@ took 778ms for
-the 'PCGen32', 784ms for the 'PCGen64', and 1005ms when using the 'StdGen'
+@(execState (replicateM 1000000 (state System.Random.next)))@ took 747ms for
+the 'PCGen32', 792ms for the 'PCGen64', and 1010ms when using the 'StdGen'
 type from 'System.Random'. Exact numbers vary from run to run of course, but
-you get the general idea. However, on a 32-bit machine the opposite is true:
-Because the internal datatype is Word64, and that has to be emulated on a
-32-bit machine, the operations end up being significantly slower. Using an
-older P4 to test it was 5351ms for 'PCGen32', 9943ms for 'PCGen64', and only
-3909ms for 'StdGen'. So, if you're targeting 32-bit for some reason, this
-might not be for you. If you want to always use the fastest possible generator
-available, you should use a CPP macro where you first initialize the generator
-for your program and pick either PCGen32 or StdGen, depending on your system.
+you get the general idea.
+
+However, on a 32-bit machine the opposite is true: Because the internal
+datatype is Word64, and that has to be emulated on a 32-bit machine, the
+operations end up being significantly slower. Using an older P4 to test it was
+5351ms for 'PCGen32', 9943ms for 'PCGen64', and only 3909ms for 'StdGen'. So,
+if you're targeting 32-bit for some reason, this might not be for you. If you
+want to always use the fastest possible generator available, you should use a
+CPP macro where you first initialize the generator for your program and pick
+either PCGen32 or StdGen, depending on your system.
 
 In terms of memory, the PCGen32 always takes up two Word64, and the PCGen64
 always takes up four Word64. In comparison, the StdGen always uses two Int.
